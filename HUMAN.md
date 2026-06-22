@@ -11,9 +11,13 @@ your login).
 
 1. Go to <https://supabase.com> → sign in → **New project**.
    - Name: `globway` (anything). Pick a region near you. Save the DB password somewhere; you won't need it for the app.
-2. Once it's provisioned: left sidebar → **SQL Editor** → **New query** → paste the
-   entire contents of [`supabase/schema.sql`](supabase/schema.sql) → **Run**.
-   (Creates `profiles` + `section_state` with row-level security.)
+2. Apply the schema (creates `profiles` + `section_state` with row-level security).
+   Either:
+   - **Paste:** SQL Editor → New query → paste [`supabase/schema.sql`](supabase/schema.sql) → Run. (Fastest, zero setup.)
+   - **Migration via CLI/integration:** the same SQL is also at
+     `supabase/migrations/20260622000000_init.sql`. If your Supabase↔GitHub
+     integration is connected, pushing deploys it. Or give me direct access (below)
+     and I'll `supabase db push`.
 3. Left sidebar → **Project Settings → API**. Copy two values:
    - **Project URL** → this is `PUBLIC_SUPABASE_URL`
    - **anon public** key → this is `PUBLIC_SUPABASE_ANON_KEY`
@@ -60,19 +64,29 @@ The repo is currently **private**. The build half of CI is already green; the
 
 ---
 
-## 4. Domain decision (to avoid the `/projname` path issue)
+## 4. Domain: globway.top (apex) DNS
 
-You flagged the GitHub Pages base-path annoyance. Two clean options:
+`public/CNAME` is already set to `globway.top`. Note: the repo **CNAME file** is fine
+for an apex/root domain — that's different from a DNS **CNAME record**, which indeed
+can't live at the apex. So at your registrar's DNS for `globway.top`:
 
-- **Custom domain (recommended):** Settings → Pages → **Custom domain** → enter e.g.
-  `meditation.yourdomain.com`, then add the DNS record your registrar needs
-  (a `CNAME` row pointing to `malcolmocean.github.io`). Leave `PUBLIC_BASE_PATH`
-  unset. I'll add a `public/CNAME` file once you pick the domain.
-- **Quick preview without a domain:** set Variable `PUBLIC_BASE_PATH=/globway`. The
-  site works at `https://malcolmocean.github.io/globway/` immediately (all links are
-  base-aware, so switching later is a one-line change).
+**Preferred — if your registrar supports ALIAS/ANAME/CNAME-flattening at the root**
+(Cloudflare, Namecheap, Porkbun-via-ALIAS, etc.): add one
+`ALIAS @ → malcolmocean.github.io`.
 
-Tell me which domain you want and I'll set the `CNAME` + `PUBLIC_SITE_URL`.
+**Otherwise — apex A records** (GitHub Pages IPs):
+```
+A  @  185.199.108.153
+A  @  185.199.109.153
+A  @  185.199.110.153
+A  @  185.199.111.153
+```
+(Optional IPv6 AAAA: `2606:50c0:8000::153` … `8001::153` … `8002::153` … `8003::153`.)
+Optional `www`: `CNAME www → malcolmocean.github.io` (GitHub redirects it to apex).
+
+Then Settings → Pages → **Custom domain** → `globway.top` → wait for the DNS check →
+tick **Enforce HTTPS**. Set repo Variable `PUBLIC_SITE_URL=https://globway.top` and
+leave `PUBLIC_BASE_PATH` unset.
 
 ---
 
