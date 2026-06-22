@@ -1,0 +1,68 @@
+---
+import Base from '../../layouts/Base.astro';
+import SectionControls from '../../components/SectionControls.astro';
+import { sections, byKey, resolveBase, sectionHref } from '../../lib/content';
+
+export function getStaticPaths() {
+  const canonical = new Set(sections.map((s) => s.key));
+  const seen = new Set<string>();
+  const paths: any[] = [];
+  // canonical content pages
+  for (const s of sections) {
+    seen.add(s.key);
+    paths.push({ params: { key: s.key }, props: { redirectTo: null } });
+  }
+  // alias redirect pages -> canonical
+  for (const s of sections) {
+    for (const a of s.aliases) {
+      if (a === s.key || canonical.has(a) || seen.has(a)) continue;
+      seen.add(a);
+      paths.push({ params: { key: a }, props: { redirectTo: s.key } });
+    }
+  }
+  return paths;
+}
+
+const { redirectTo } = Astro.props;
+const { key } = Astro.params;
+const base = import.meta.env.BASE_URL;
+
+// Alias hit -> emit a tiny redirect page (no layout).
+if (redirectTo) {
+  const dest = sectionHref(base, redirectTo);
+  return new Response(
+    `<!doctype html><meta charset=utf-8><title>redirecting…</title>` +
+      `<meta http-equiv="refresh" content="0; url=${dest}">` +
+      `<script>location.replace(${JSON.stringify(dest)})</script>` +
+      `<p>Redirecting to <a href="${dest}">${redirectTo}</a>…</p>`,
+    { headers: { 'content-type': 'text/html' } }
+  );
+}
+
+const s = byKey.get(key!)!;
+const html = resolveBase(s.html, base);
+// breadcrumb ancestors
+const crumbs: { key: string; title: string }[] = [];
+let p = s.parent;
+while (p) { const a = byKey.get(p); if (!a) break; crumbs.unshift({ key: a.key, title: a.title }); p = a.parent; }
+const prev = s.prev ? byKey.get(s.prev) : null;
+const next = s.next ? byKey.get(s.next) : null;
+---
+<Base title={`${s.title} — Globway`} current={s.key}>
+  <article class="content">
+    {crumbs.length > 0 && (
+      <div class="crumbs">
+        {crumbs.map((c, i) => (
+          <>{i > 0 && ' › '}<a href={sectionHref(base, c.key)}>{c.title}</a></>
+        ))}
+      </div>
+    )}
+    <SectionControls sectionKey={s.key} />
+    <div set:html={html} />
+    <nav class="pager">
+      {prev ? <a class="prev" href={sectionHref(base, prev.key)}>← {prev.title}</a> : <span></span>}
+      {next ? <a class="next" href={sectionHref(base, next.key)}>{next.title} →</a> : <span></span>}
+    </nav>
+    <p class="meta">{s.wordcount} words · {s.kind}{s.aliases.length > 1 ? ` · also: ${s.aliases.filter((a) => a !== s.key).join(', ')}` : ''}</p>
+  </article>
+</Base>

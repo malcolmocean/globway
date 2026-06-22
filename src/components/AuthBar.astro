@@ -1,0 +1,13 @@
+---
+// Magic-link auth + status. All behavior is wired client-side in app.ts via data-* hooks.
+---
+<div class="authbar">
+  <span data-auth-status>…</span>
+  <form data-auth-form data-when="signed-out" hidden style="display:contents">
+    <input type="email" placeholder="you@email.com" autocomplete="email" required />
+    <button type="submit">Email me a link</button>
+    <span data-auth-msg></span>
+  </form>
+  <button data-signout data-when="signed-in" hidden>sign out</button>
+  <span data-when="unconfigured" hidden>· progress saved on this device</span>
+</div>

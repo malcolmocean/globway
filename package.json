@@ -1,0 +1,22 @@
+{
+  "name": "globway",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An interactive reading layer for Mark Lippmann's Global Wayfinding Meditation protocol",
+  "scripts": {
+    "content": "node scripts/build-content.mjs",
+    "dev": "npm run content && astro dev",
+    "build": "npm run content && astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "astro": "^4.15.0"
+  },
+  "devDependencies": {
+    "markdown-it": "^14.1.0",
+    "node-html-parser": "^6.1.13"
+  }
+}

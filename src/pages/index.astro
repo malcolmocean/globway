@@ -1,0 +1,24 @@
+---
+import Base from '../layouts/Base.astro';
+import Tree from '../components/Tree.astro';
+import { buildTree, sections } from '../lib/content';
+const tree = buildTree();
+const totalWords = sections.reduce((a, s) => a + s.wordcount, 0);
+---
+<Base title="Globway — the map">
+  <div class="map">
+    <div class="map-head">
+      <h1>The Map</h1>
+      <p class="meta">
+        {sections.length} sections · {totalWords.toLocaleString()} words ·
+        <span data-progress>0 read</span>
+      </p>
+      <p class="meta" data-when="signed-out" hidden>
+        Marks save on this device. Sign in (top-left) to sync phone ↔ computer.
+      </p>
+    </div>
+    <div class="map-wrap">
+      <Tree nodes={tree} showWordcount={true} />
+    </div>
+  </div>
+</Base>

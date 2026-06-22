@@ -1,0 +1,12 @@
+---
+interface Props { sectionKey: string; }
+const { sectionKey } = Astro.props;
+---
+<div class="controls">
+  <button type="button" data-action="read" data-key={sectionKey} aria-pressed="false">
+    <span aria-hidden="true">✓</span> Read
+  </button>
+  <button type="button" data-action="star" data-key={sectionKey} aria-pressed="false">
+    <span aria-hidden="true">★</span> Star
+  </button>
+</div>

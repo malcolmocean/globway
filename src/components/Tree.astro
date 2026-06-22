@@ -1,0 +1,27 @@
+---
+// Recursive TOC tree node. Used in the sidebar and the Map page.
+import type { TreeNode } from '../lib/content';
+import { sectionHref } from '../lib/content';
+interface Props { nodes: TreeNode[]; current?: string; showWordcount?: boolean; }
+const { nodes, current, showWordcount = true } = Astro.props;
+const base = import.meta.env.BASE_URL;
+---
+<ul class="tree">
+  {nodes.map((n) => (
+    <li class={`depth-${n.depth}`}>
+      <a
+        class={`row${n.key === current ? ' current' : ''}`}
+        data-row-key={n.key}
+        href={sectionHref(base, n.key)}
+      >
+        <span class="dot" aria-hidden="true"></span>
+        <span class="t">{n.title || n.key}</span>
+        <span class="star" aria-hidden="true">★</span>
+        {showWordcount && <span class="wc">{n.wordcount}</span>}
+      </a>
+      {n.children.length > 0 && (
+        <Astro.self nodes={n.children} current={current} showWordcount={showWordcount} />
+      )}
+    </li>
+  ))}
+</ul>

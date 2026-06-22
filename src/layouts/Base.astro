@@ -1,0 +1,44 @@
+---
+import '../styles/global.css';
+import Tree from '../components/Tree.astro';
+import AuthBar from '../components/AuthBar.astro';
+import { buildTree } from '../lib/content';
+interface Props { title: string; current?: string; }
+const { title, current } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const tree = buildTree();
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="color-scheme" content="light dark" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <a class="brand" href={base}>
+          Globway
+          <small>Global Wayfinding Meditation — an interactive reading of Mark Lippmann's protocol</small>
+        </a>
+        <AuthBar />
+        <nav aria-label="Table of contents">
+          <Tree nodes={tree} current={current} showWordcount={false} />
+        </nav>
+        <footer class="sidebar-foot">
+          A rearranged reading of the
+          <a href="https://meditationbook.page" rel="noopener">canonical document</a>
+          by “meditationstuff” (Mark Lippmann). This edition may lag the original.
+        </footer>
+      </aside>
+      <main class="main">
+        <slot />
+      </main>
+    </div>
+    <script>
+      import '../scripts/app.ts';
+    </script>
+  </body>
+</html>
