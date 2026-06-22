@@ -8,3 +8,6 @@ src/data/aliases.json
 .env
 .env.local
 .DS_Store
+
+# supabase CLI local link state
+supabase/.temp/
