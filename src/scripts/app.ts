@@ -100,22 +100,34 @@ async function pullRemote() {
   applyAll();
 }
 
+let signinExpanded = false;
+
 function renderAuth(session: any) {
   const signedIn = !!session;
+  const signedOut = isConfigured && !signedIn;
+  // Status text: only the email when signed in (the "sign in" button stands in for "signed out").
   document.querySelectorAll<HTMLElement>('[data-auth-status]').forEach((el) => {
-    el.textContent = !isConfigured
-      ? 'local only'
-      : signedIn ? (session.user.email || 'signed in') : 'signed out';
+    el.textContent = signedIn ? (session.user.email || 'signed in') : '';
+    el.hidden = !signedIn;
   });
   document.querySelectorAll<HTMLElement>('[data-when="signed-in"]').forEach(
     (el) => (el.hidden = !signedIn));
-  document.querySelectorAll<HTMLElement>('[data-when="signed-out"]').forEach(
-    (el) => (el.hidden = signedIn || !isConfigured));
+  // Signed out collapses to a single "sign in" button; clicking it reveals the inline form.
+  document.querySelectorAll<HTMLElement>('[data-signin-toggle]').forEach(
+    (el) => (el.hidden = !(signedOut && !signinExpanded)));
+  document.querySelectorAll<HTMLElement>('[data-auth-form]').forEach(
+    (el) => (el.hidden = !(signedOut && signinExpanded)));
   document.querySelectorAll<HTMLElement>('[data-when="unconfigured"]').forEach(
     (el) => (el.hidden = isConfigured));
 }
 
 function wireAuth() {
+  document.querySelectorAll<HTMLElement>('[data-signin-toggle]').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      signinExpanded = true;
+      renderAuth(null); // toggle only shows when signed out, so session is null
+      (document.querySelector('[data-auth-form] input[type=email]') as HTMLInputElement | null)?.focus();
+    }));
   document.querySelectorAll<HTMLFormElement>('[data-auth-form]').forEach((form) => {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();

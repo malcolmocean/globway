@@ -1,9 +1,11 @@
 ---
 // Magic-link auth + status. All behavior is wired client-side in app.ts via data-* hooks.
+// Signed out: a compact "sign in" button that expands to an inline email field.
 ---
 <div class="authbar">
-  <span data-auth-status>…</span>
-  <form data-auth-form data-when="signed-out" hidden style="display:contents">
+  <span data-auth-status hidden></span>
+  <button type="button" data-signin-toggle hidden>sign in</button>
+  <form data-auth-form hidden>
     <input type="email" placeholder="you@email.com" autocomplete="email" required />
     <button type="submit">Email me a link</button>
     <span data-auth-msg></span>
