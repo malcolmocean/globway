@@ -62,6 +62,16 @@ create policy "section_state is self-owned"
 create index if not exists section_state_user_idx on public.section_state (user_id);
 
 -- ---------------------------------------------------------------------------
+-- Table privileges. RLS filters ROWS, but the role still needs table GRANTs.
+-- Only `authenticated` (signed-in users) gets access; `anon` gets nothing, so
+-- reading state requires being logged in. Per-user isolation is enforced by the
+-- RLS policies above (auth.uid() = user_id).
+-- ---------------------------------------------------------------------------
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on public.section_state to authenticated;
+grant select, update on public.profiles to authenticated;
+
+-- ---------------------------------------------------------------------------
 -- (Deferred, here for reference — not used by v1)
 -- notes:       per-section freeform notes
 -- timer_logs:  "try this for N minutes" practice sessions
