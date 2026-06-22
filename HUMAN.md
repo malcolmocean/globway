@@ -45,11 +45,18 @@ Variables means they're visible in build logs, which is fine.)
 
 ---
 
-## 3. Enable GitHub Pages
+## 3. Go live: make public (or Pro) + enable GitHub Pages
 
-Repo → **Settings → Pages** → **Build and deployment → Source: GitHub Actions**.
-Then the `Deploy` workflow runs on every push to `main`. I may have enabled this
-for you already (check the **Actions** tab for a green run).
+The repo is currently **private**. The build half of CI is already green; the
+**deploy** step is failing only because Pages isn't enabled yet. To finish:
+
+1. Decide visibility. GitHub Pages on a **private** repo needs GitHub Pro/Team. The
+   simplest path (and your eventual intent) is to make it **public**:
+   Settings → General → Danger Zone → **Change visibility → Public**.
+   (I left this to you — you'd only said "maybe eventually public.")
+2. Repo → **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+3. Re-run the latest workflow (Actions tab → latest run → **Re-run all jobs**), or
+   just push any commit. The site deploys.
 
 ---
 
@@ -74,7 +81,8 @@ Tell me which domain you want and I'll set the `CNAME` + `PUBLIC_SITE_URL`.
 - Repo scaffolded, content parser, full Astro site (Map + 340 section pages +
   legacy-anchor redirects), read/star sync code, deploy workflow, schema SQL.
 - Verified locally in a browser: rendering, read/star toggles, persistence.
-- Pushed to GitHub (see the repo's Actions tab).
+- Pushed to GitHub (private): <https://github.com/malcolmocean/globway>
+- CI **build** job passes in a clean environment; **deploy** waits on steps 3 above.
 
 ## What's deferred (designed-for, next milestones)
 
