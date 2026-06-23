@@ -172,16 +172,17 @@ function renderInProgress() {
   const meta = new Map(orderedRows().map((r) => [r.key, r]));
   const items = Object.entries(state)
     .filter(([k, e]) => inProgress(e) && meta.has(k))
-    .map(([k, e]) => ({ ...meta.get(k)!, progress: e.progress!, at: e.updated_at || '' }))
+    .map(([k, e]) => ({ ...meta.get(k)!, progress: e.progress!, starred: !!e.starred, at: e.updated_at || '' }))
     .sort((a, b) => b.at.localeCompare(a.at));
   if (!items.length) { panel.hidden = true; list.innerHTML = ''; return; }
   panel.hidden = false;
   list.innerHTML = items.map((it) => {
     const pct = Math.max(1, Math.round(it.progress * 100));
     const title = escapeHtml(it.title);
+    const star = it.starred ? `<span class="ip-star" aria-hidden="true">★</span> ` : '';
     return `<li class="ip-item">` +
       `<a class="ip-link" href="${escapeHtml(it.href)}">` +
-        `<span class="ip-title">${title}</span>` +
+        `<span class="ip-title">${star}${title}</span>` +
         `<span class="ip-bar"><span class="ip-fill" style="width:${pct}%"></span></span>` +
         `<span class="ip-pct">${pct}%</span>` +
       `</a>` +
@@ -610,13 +611,24 @@ function initReadTracking() {
   ['wheel', 'touchstart', 'keydown'].forEach((ev) =>
     window.addEventListener(ev, () => { userScrolled = true; }, { once: true, passive: true }));
 
-  // Short, non-scrolling pages can't report progress — mark read after a dwell
-  // proportional to length (the "wordcount × 0.01 min" idea), clamped to 8–90s.
-  let dwell = 0;
-  const armDwell = () => {
-    if (dwell || isScrollable() || (state[trackKey!] || {}).read) return;
-    const ms = Math.min(90000, Math.max(8000, Math.round(wordcount * 600)));
-    dwell = window.setTimeout(() => setRead(trackKey!), ms);
+  // Short, non-scrolling pages can't report scroll progress — mark read after a
+  // dwell proportional to length (~0.3s/word, clamped 8–90s). The dwell counts
+  // only *visible* time: it pauses while the tab is hidden/backgrounded so time
+  // spent away doesn't quietly mark the page read.
+  const dwellMs = Math.min(90000, Math.max(8000, Math.round(wordcount * 300)));
+  let dwellLeft = dwellMs;   // visible ms still required before auto-read
+  let dwellTimer = 0;
+  let dwellSince = 0;        // performance.now() when the current visible run began
+  const dwellEligible = () => !isScrollable() && !(state[trackKey!] || {}).read;
+  const dwellResume = () => {
+    if (dwellTimer || document.visibilityState !== 'visible' || !dwellEligible()) return;
+    dwellSince = performance.now();
+    dwellTimer = window.setTimeout(() => { dwellTimer = 0; setRead(trackKey!); }, dwellLeft);
+  };
+  const dwellPause = () => {
+    if (!dwellTimer) return;
+    clearTimeout(dwellTimer); dwellTimer = 0;
+    dwellLeft = Math.max(0, dwellLeft - (performance.now() - dwellSince));
   };
 
   let raf = 0;
@@ -631,19 +643,22 @@ function initReadTracking() {
     });
   };
   window.addEventListener('scroll', onScroll, { passive: true });
-  window.addEventListener('resize', armDwell);
+  // A resize may flip scrollability (rotate / font reflow): re-evaluate the dwell.
+  window.addEventListener('resize', () => { dwellPause(); dwellResume(); });
 
-  // Flush any debounced progress write when the page is hidden / navigated away.
+  // Pause the dwell + flush any debounced progress write when the tab is hidden or
+  // the page is navigated away; resume counting once it's visible again.
   const flush = () => { if (trackKey) syncRow(trackKey); };
-  window.addEventListener('pagehide', flush);
+  window.addEventListener('pagehide', () => { dwellPause(); flush(); });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flush();
+    if (document.visibilityState === 'hidden') { dwellPause(); flush(); }
+    else dwellResume();
   });
 
-  armDwell();
+  dwellResume();
   maybeRestoreScroll();
   // Re-try once fonts/layout settle — scrollHeight (hence the restore target) shifts.
-  window.addEventListener('load', () => { armDwell(); maybeRestoreScroll(); });
+  window.addEventListener('load', () => { dwellResume(); maybeRestoreScroll(); });
 }
 
 // ---- boot -------------------------------------------------------------------
