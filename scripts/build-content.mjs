@@ -148,14 +148,26 @@ sections.forEach((s, i) => {
 const aliasToCanonical = {};
 for (const [key, al] of Object.entries(aliasMap)) for (const a of al) aliasToCanonical[a] = key;
 
-// ---- 5. Second pass: rewrite in-text #anchor links to /s/<canonical> --------
-// (We needed the full alias map first.) Re-render with link rewriting applied.
-for (const s of sections) {
-  s.html = s.html.replace(/href="#([^"]+)"/g, (full, anchor) => {
+// ---- 4b. Auxiliary practices: split appendix 2 ("full") into one record per
+// practice, presented on their own at /aux?p=<key> (NOT global sections, so they
+// stay out of the sidebar/tree/random). Appendix 1 ("names only") is their index;
+// its 959 links are paired by position to these records so every link resolves —
+// more robust than slug-matching, since some of Mark's #slug links are broken
+// upstream and a few practices share a slug.
+const { auxPractices, auxSlugToKey } = buildAuxPractices();
+
+// ---- 5. Second pass: rewrite in-text #anchor links --------------------------
+// (We needed the full alias map first.) A bare #slug resolves to an aux practice
+// first (so Appendix 1 + any cross-links land on /aux), else to a /s/<canonical>.
+function rewriteLinks(html) {
+  return html.replace(/href="#([^"]+)"/g, (full, anchor) => {
+    if (auxSlugToKey[anchor]) return `href="@@BASE@@aux?p=${auxSlugToKey[anchor]}"`;
     const canon = aliasToCanonical[anchor];
-    return canon ? `href="@@BASE@@s/${canon}"` : full; // @@BASE@@ replaced client-side / in layout
+    return canon ? `href="@@BASE@@s/${canon}"` : full; // @@BASE@@ replaced in layout
   });
 }
+for (const s of sections) s.html = rewriteLinks(s.html);
+for (const a of auxPractices) a.html = rewriteLinks(a.html);
 
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(
@@ -166,18 +178,86 @@ fs.writeFileSync(
   path.join(OUT, 'aliases.json'),
   JSON.stringify({ aliasToCanonical, aliasMap }, null, 0)
 );
+// Aux practices ship as a static asset the /aux presenter fetches once (cached),
+// rather than inlining ~0.5 MB into that page's HTML.
+fs.mkdirSync(path.join(ROOT, 'public'), { recursive: true });
+fs.writeFileSync(
+  path.join(ROOT, 'public', 'aux.json'),
+  JSON.stringify({ count: auxPractices.length, practices: auxPractices }, null, 0)
+);
 
 console.log(
   `Wrote ${sections.length} sections (${Object.keys(aliasToCanonical).length} anchors). ` +
-    `TOC items: ${tocItems.length}, located: ${located.length}.`
+    `TOC items: ${tocItems.length}, located: ${located.length}. ` +
+    `Aux practices: ${auxPractices.length}.`
 );
+
+// Pair Appendix 1's ordered name-links with Appendix 2's ordered practice headers
+// (counts are equal). Each practice's key is the Appendix-1 slug (uniquified on
+// the few repeats) so its index link resolves; that key is the /aux?p= value and
+// the section_state key for read/star, so per-practice state Just Works.
+function buildAuxPractices() {
+  const namesMd = fs.readFileSync(path.join(SRC, 'auxiliary_names.md'), 'utf8').split('\n');
+  const fullMd = fs.readFileSync(path.join(SRC, 'auxiliary.md'), 'utf8');
+  const fullLines = fullMd.split('\n');
+
+  // Appendix 1: ordered list of {slug, name}
+  const names = [];
+  for (const l of namesMd) {
+    const m = l.match(/^\*\s+<a id="\d+auxiliary_names" href="#([^"]*)">([\s\S]*?)<\/a>/);
+    if (m) names.push({ slug: m[1], name: decodeEntities(m[2].replace(/<[^>]+>/g, '').trim()) });
+  }
+
+  // Appendix 2: header lines (one per practice), excluding the appendix title.
+  const heads = [];
+  fullLines.forEach((l, i) => {
+    if (!/^#[^#]/.test(l)) return;
+    if (/id="appendix-2-/.test(l)) return; // the appendix title itself
+    heads.push(i);
+  });
+  if (heads.length !== names.length) {
+    console.warn(`! aux pairing mismatch: ${names.length} names vs ${heads.length} practices — links may misalign`);
+  }
+
+  const n = Math.min(heads.length, names.length);
+  const used = new Map(); // base slug -> count, to uniquify duplicates
+  const auxSlugToKey = {};
+  const practices = [];
+  for (let i = 0; i < n; i++) {
+    const start = heads[i];
+    const end = i + 1 < heads.length ? heads[i + 1] : fullLines.length;
+    const bodyMd = fullLines.slice(start, end).join('\n');
+    const baseSlug = names[i].slug || `aux-${i}`;
+    const seen = (used.get(baseSlug) || 0) + 1;
+    used.set(baseSlug, seen);
+    const key = seen === 1 ? baseSlug : `${baseSlug}-${seen}`;
+    // bare slug -> first practice using it (for cross-links elsewhere)
+    if (!(baseSlug in auxSlugToKey)) auxSlugToKey[baseSlug] = key;
+    const { html } = postProcess(md.render(bodyMd));
+    practices.push({ key, title: names[i].name, order: i, html });
+  }
+  return { auxPractices: practices, auxSlugToKey };
+}
 
 // ---- helpers ----------------------------------------------------------------
 function postProcess(html) {
+  html = stripDeadNavLinks(html);
   // strip ids that would collide? keep them — useful for in-page sub-anchors.
   const root = parseHtml(html);
   const plain = root.text || '';
   return { html, plain };
+}
+
+// Remove the boilerplate "[Go up to this section's line in the Full Table of
+// Contents][Go to the Partial Guided Tour …]" blocks. They point at anchors from
+// Mark's single-page document (#NNNh, #qq) that have no equivalent in Globway's
+// per-section model, so they're dead here — and the breadcrumb + sidebar already
+// cover "go up". Done at build time so the vendored source stays untouched.
+function stripDeadNavLinks(html) {
+  return html
+    .replace(/\[?\s*<a\b[^>]*>\s*Go up to this[^<]*Table of Contents\s*<\/a>\s*\]?/gi, '')
+    .replace(/\[?\s*<a\b[^>]*>\s*Go to the Partial Guided Tour[^<]*<\/a>\s*\]?/gi, '')
+    .replace(/<p>\s*<\/p>/gi, '');
 }
 function decodeEntities(s) {
   return s

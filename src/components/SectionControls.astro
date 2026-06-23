@@ -9,4 +9,7 @@ const { sectionKey } = Astro.props;
   <button type="button" data-action="star" data-key={sectionKey} aria-pressed="false">
     <span aria-hidden="true">★</span> Star
   </button>
+  <button type="button" data-action="hide" data-key={sectionKey} aria-pressed="false" class="hide-btn">
+    <span aria-hidden="true">⊘</span> Hide
+  </button>
 </div>

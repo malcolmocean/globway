@@ -5,10 +5,10 @@ import { buildTree, sections } from '../lib/content';
 const tree = buildTree();
 const totalWords = sections.reduce((a, s) => a + s.wordcount, 0);
 ---
-<Base title="Globway — the map">
+<Base title="Globway — Table of Contents">
   <div class="map">
     <div class="map-head">
-      <h1>The Map</h1>
+      <h1>Table of Contents</h1>
       <p class="meta">
         {sections.length} sections · {totalWords.toLocaleString()} words ·
         <span data-progress>0 read</span>

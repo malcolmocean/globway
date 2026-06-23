@@ -46,6 +46,7 @@ create table if not exists public.section_state (
   section_key text not null,
   read        boolean not null default false,
   starred     boolean not null default false,
+  hidden      boolean not null default false,
   read_at     timestamptz,
   updated_at  timestamptz not null default now(),
   primary key (user_id, section_key)

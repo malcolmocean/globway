@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import Tree from '../components/Tree.astro';
+import NavBar from '../components/NavBar.astro';
 import AuthBar from '../components/AuthBar.astro';
 import { buildTree } from '../lib/content';
 interface Props { title: string; current?: string; }
@@ -24,6 +25,7 @@ const tree = buildTree();
           <small>Global Wayfinding Meditation — an interactive reading of Mark Lippmann's protocol</small>
         </a>
         <AuthBar />
+        <NavBar />
         <nav aria-label="Table of contents">
           <Tree nodes={tree} current={current} showWordcount={false} />
         </nav>
