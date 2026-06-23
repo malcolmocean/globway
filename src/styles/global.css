@@ -69,6 +69,16 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .tree .row.is-hidden { opacity: .5; }
 .tree .row.is-hidden .t { text-decoration: line-through; }
 
+/* collapsible deck preamble (instructions) */
+.preamble { margin: 0 0 1.2rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-elev); }
+.preamble-toggle { font: inherit; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px; font-weight: 600;
+  cursor: pointer; background: none; border: 0; color: var(--muted); padding: .5rem .75rem; width: 100%;
+  display: flex; gap: .4rem; align-items: center; text-align: left; }
+.preamble .caret { display: inline-block; width: .8rem; }
+.preamble-body { padding: 0 .9rem .75rem; }
+.preamble-body > :first-child { margin-top: 0; }
+.preamble-body > :last-child { margin-bottom: 0; }
+
 /* deck presenter (/aux, /p3, /p8) */
 .deck .pager.aux-pager { align-items: baseline; }
 .aux-pager .pill.jump { flex: none; }
@@ -114,6 +124,7 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .controls button[data-action=star].is-on { background: var(--star-tint); border-color: var(--star); color: var(--star); }
 .controls button[data-action=hide].is-on { background: var(--bg-elev); border-color: var(--muted); color: var(--muted); text-decoration: line-through; }
 .aux-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.bottom-controls { margin: 1.5rem 0 0; }
 .crumbs { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px; color: var(--muted); margin-bottom: .25rem; }
 .crumbs a { color: var(--muted); }
 

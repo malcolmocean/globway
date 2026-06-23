@@ -40,6 +40,22 @@ function applyAll() {
   refreshProgress();
   applyFilter(currentFilter());
   updatePager();
+  document.querySelectorAll<HTMLElement>('[data-preamble]').forEach((r) => {
+    if (r.dataset.preambleKey) applyPreamble(r);
+  });
+}
+// Collapsible deck preamble. Collapsed state syncs via section_state under a
+// synthetic `preamble:<deck>` key, reusing the `hidden` field as "collapsed".
+function applyPreamble(region: HTMLElement) {
+  const key = region.dataset.preambleKey!;
+  const collapsed = !!(state[key] || {}).hidden;
+  region.classList.toggle('collapsed', collapsed);
+  const body = region.querySelector<HTMLElement>('[data-preamble-body]');
+  if (body) body.hidden = collapsed;
+  const btn = region.querySelector('.preamble-toggle');
+  btn?.setAttribute('aria-expanded', String(!collapsed));
+  const caret = region.querySelector('.caret');
+  if (caret) caret.textContent = collapsed ? '▸' : '▾';
 }
 function setPressed(el: HTMLElement, on: boolean) {
   el.setAttribute('aria-pressed', String(on));
@@ -244,6 +260,14 @@ function wireControls() {
       applyFilter(f);
       return;
     }
+    // collapsible deck preamble (collapsed state syncs)
+    const pre = target.closest('[data-action="toggle-preamble"]');
+    if (pre) {
+      const region = pre.closest<HTMLElement>('[data-preamble]');
+      const key = region?.dataset.preambleKey;
+      if (region && key) { toggle(key, 'hidden'); applyPreamble(region); }
+      return;
+    }
     // random section within the current filter view
     if (target.closest('[data-action="random-view"]')) randomInView();
   });
@@ -271,15 +295,26 @@ async function initDeck() {
 
   let items: DeckItem[] = [];
   let byKey = new Map<string, DeckItem>();
+  let deckPreamble = '';
   try {
     const data = await (await fetch(src)).json();
     items = data.items || [];
+    deckPreamble = data.preamble || '';
     byKey = new Map(items.map((p) => [p.key, p]));
   } catch {
     titleEl.textContent = 'Could not load this list.';
     return;
   }
   if (!items.length) { titleEl.textContent = 'Nothing here.'; return; }
+
+  // Optional collapsible preamble (instructions) at the top of the deck page.
+  const preEl = root.querySelector<HTMLElement>('[data-preamble]');
+  if (preEl && deckPreamble) {
+    preEl.querySelector<HTMLElement>('[data-preamble-body]')!.innerHTML = deckPreamble.replaceAll('@@BASE@@', basePrefix);
+    preEl.dataset.preambleKey = `preamble:${deck}`;
+    preEl.hidden = false;
+    applyPreamble(preEl);
+  }
 
   const randomKey = () => items[Math.floor(Math.random() * items.length)].key;
   const deckHref = (key: string) => `${basePrefix}${deck}?p=${encodeURIComponent(key)}`;
@@ -331,12 +366,22 @@ async function initDeck() {
   render(first);
 }
 
+// A bottom star only earns its place on pages long enough to scroll — by the time
+// you've reached the end, the top control is far away. Hidden on short pages.
+function revealBottomControls() {
+  const el = document.querySelector<HTMLElement>('[data-bottom-controls]');
+  if (!el) return;
+  el.hidden = document.documentElement.scrollHeight <= window.innerHeight + 100;
+}
+
 // ---- boot -------------------------------------------------------------------
 async function boot() {
   wireControls();
   wireAuth();
   applyAll();
   initDeck();
+  revealBottomControls();
+  window.addEventListener('resize', revealBottomControls);
   if (sb) {
     const session = await getSession();
     renderAuth(session);

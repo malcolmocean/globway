@@ -9,6 +9,13 @@ const { src, backHref, backLabel } = Astro.props;
 <article class="content deck" data-deck data-src={src}>
   <div class="crumbs"><a href={backHref}>{backLabel}</a></div>
 
+  <div class="preamble" data-preamble data-preamble-key="" hidden>
+    <button type="button" class="preamble-toggle" data-action="toggle-preamble" aria-expanded="true">
+      <span class="caret" aria-hidden="true">▾</span> Instructions
+    </button>
+    <div class="preamble-body" data-preamble-body></div>
+  </div>
+
   <div class="controls" data-deck-controls hidden>
     <button type="button" data-action="read" data-key="" aria-pressed="false"><span aria-hidden="true">✓</span> Read</button>
     <button type="button" data-action="star" data-key="" aria-pressed="false"><span aria-hidden="true">★</span> Star</button>

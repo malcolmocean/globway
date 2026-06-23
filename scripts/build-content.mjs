@@ -175,8 +175,9 @@ for (const a of auxPractices) a.html = rewriteLinks(a.html);
 // shape so /aux, /p3, /p8 reuse one presenter (see src/components/Presenter.astro).
 const byKeySection = new Map(sections.map((s) => [s.key, s]));
 const decks = {
-  aux: auxPractices.map((p) => ({ key: p.key, title: p.title, order: p.order, html: p.html })),
-  p3: buildListDeck('p3'),
+  aux: { items: auxPractices.map((p) => ({ key: p.key, title: p.title, order: p.order, html: p.html })), preamble: '' },
+  // p3 has no text before its list; its bolded lead item is the stem/instructions.
+  p3: buildListDeck('p3', { leadEmphasisPreamble: true }),
   p8: buildListDeck('p8'),
 };
 
@@ -192,26 +193,35 @@ fs.writeFileSync(
 // Decks ship as static assets the presenter fetches once (cached), rather than
 // inlining ~0.5 MB into the page HTML.
 fs.mkdirSync(path.join(ROOT, 'public'), { recursive: true });
-for (const [name, items] of Object.entries(decks)) {
+for (const [name, deck] of Object.entries(decks)) {
   fs.writeFileSync(
     path.join(ROOT, 'public', `${name}.json`),
-    JSON.stringify({ count: items.length, items }, null, 0)
+    JSON.stringify({ count: deck.items.length, items: deck.items, preamble: deck.preamble || '' }, null, 0)
   );
 }
 
 console.log(
   `Wrote ${sections.length} sections (${Object.keys(aliasToCanonical).length} anchors). ` +
     `TOC items: ${tocItems.length}, located: ${located.length}. ` +
-    `Decks: ${Object.entries(decks).map(([n, i]) => `${n}=${i.length}`).join(', ')}.`
+    `Decks: ${Object.entries(decks).map(([n, d]) => `${n}=${d.items.length}`).join(', ')}.`
 );
 
 // Split a section's prompt list(s) into one card per TOP-LEVEL <li> (nested
-// sub-bullets ride along inside their parent card). Used for p3/p8, whose content
-// is a deck of prompts with no per-item anchors.
-function buildListDeck(sectionKey) {
+// sub-bullets ride along inside their parent card). Also pull a preamble: the
+// prose between the section header and the first list (p8), or — with
+// leadEmphasisPreamble — a fully-bolded lead item that frames the list (p3).
+// Used for p3/p8, whose content is a deck of prompts with no per-item anchors.
+function buildListDeck(sectionKey, opts = {}) {
   const s = byKeySection.get(sectionKey);
-  if (!s) { console.warn(`! deck source section not found: ${sectionKey}`); return []; }
+  if (!s) { console.warn(`! deck source section not found: ${sectionKey}`); return { items: [], preamble: '' }; }
   const root = parseHtml(s.html);
+  // Preamble candidate 1: top-level nodes before the first list, minus the <h1>.
+  let preamble = '';
+  for (const node of root.childNodes) {
+    const tag = (node.tagName || '').toUpperCase();
+    if (tag === 'OL' || tag === 'UL') break;
+    if (tag && tag !== 'H1' && (node.text || '').trim()) preamble += node.toString();
+  }
   const items = [];
   for (const li of root.querySelectorAll('li')) {
     let anc = li.parentNode, nested = false;
@@ -219,15 +229,21 @@ function buildListDeck(sectionKey) {
     if (nested) continue; // only top-level items become cards
     const text = (li.text || '').replace(/\s+/g, ' ').trim();
     if (!text) continue;
-    const order = items.length;
-    items.push({
-      key: `${sectionKey}-${order + 1}`,
-      title: text.length > 80 ? text.slice(0, 79).trimEnd() + '…' : text,
-      order,
-      html: li.innerHTML,
-    });
+    items.push({ title: text, html: li.innerHTML });
   }
-  return items;
+  // Preamble candidate 2 (p3): no prose preamble, but a bolded lead item frames it.
+  if (!preamble && opts.leadEmphasisPreamble && items.length && /^<(em|strong)>/.test(items[0].html.trim())) {
+    preamble = `<p>${items.shift().html}</p>`;
+  }
+  return {
+    items: items.map((it, order) => ({
+      key: `${sectionKey}-${order + 1}`,
+      title: it.title.length > 80 ? it.title.slice(0, 79).trimEnd() + '…' : it.title,
+      order,
+      html: it.html,
+    })),
+    preamble,
+  };
 }
 
 // Pair Appendix 1's ordered name-links with Appendix 2's ordered practice headers
