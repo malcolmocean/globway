@@ -22,23 +22,6 @@ export const byKey = new Map(sections.map((s) => [s.key, s]));
 export const aliasToCanonical: Record<string, string> = aliases.aliasToCanonical;
 export const aliasMap: Record<string, string[]> = aliases.aliasMap;
 
-export interface TreeNode extends Section {
-  children: TreeNode[];
-}
-
-/** Build the nested tree from flat parent pointers, preserving reading order. */
-export function buildTree(): TreeNode[] {
-  const nodes = new Map<string, TreeNode>();
-  for (const s of sections) nodes.set(s.key, { ...s, children: [] });
-  const roots: TreeNode[] = [];
-  for (const s of sections) {
-    const node = nodes.get(s.key)!;
-    if (s.parent && nodes.has(s.parent)) nodes.get(s.parent)!.children.push(node);
-    else roots.push(node);
-  }
-  return roots;
-}
-
 /** Direct children of a section, in reading order. */
 export function childrenOf(key: string): Section[] {
   return sections.filter((s) => s.parent === key);

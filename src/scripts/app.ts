@@ -4,7 +4,9 @@
 //   2. Supabase configured + signed out -> local only; prompts to sign in to sync.
 //   3. Supabase not configured           -> local only (dev / pre-setup).
 import { getSupabase, isConfigured } from '../lib/supabase';
+import tocData from '../data/toc.json';
 
+type TocNode = { key: string; title: string; depth: number; children: TocNode[] };
 type Entry = { read?: boolean; starred?: boolean; hidden?: boolean; progress?: number; updated_at: string };
 type State = Record<string, Entry>;
 type Filter = 'all' | 'starred' | 'read' | 'unread' | 'inprogress' | 'hidden';
@@ -495,6 +497,36 @@ async function initDeck(signal: AbortSignal) {
   render(first);
 }
 
+// Build the sidebar TOC tree once, client-side, from the bundled toc.json — the
+// same <ul class="tree"> markup Tree.astro used to server-render into every page.
+// The container is transition:persist, so this survives navigations (built once).
+// The interactive state layer keys off [data-row-key], agnostic to who built it.
+function buildSidebarTree() {
+  const nav = document.querySelector<HTMLElement>('.sidebar nav[data-toc]');
+  if (!nav || nav.querySelector('ul.tree')) return; // missing, or already built
+  const base = import.meta.env.BASE_URL;
+  const b = base.endsWith('/') ? base : base + '/';
+  const render = (nodes: TocNode[]): HTMLUListElement => {
+    const ul = document.createElement('ul');
+    ul.className = 'tree';
+    for (const n of nodes) {
+      const li = document.createElement('li');
+      li.className = `depth-${n.depth}`;
+      const a = document.createElement('a');
+      a.className = 'row' + (n.children.length ? ' has-kids' : '');
+      a.dataset.rowKey = n.key;
+      a.href = `${b}s/${n.key}`;
+      a.innerHTML = '<span class="dot" aria-hidden="true"></span><span class="t"></span><span class="star" aria-hidden="true">★</span>';
+      a.querySelector('.t')!.textContent = n.title || n.key;
+      li.appendChild(a);
+      if (n.children.length) li.appendChild(render(n.children));
+      ul.appendChild(li);
+    }
+    return ul;
+  };
+  nav.appendChild(render(tocData as TocNode[]));
+}
+
 // Scroll the sidebar so the current page's row sits at the vertical centre — deep
 // items are otherwise off-screen below the fold when you land on a page.
 function scrollSidebarToCurrent() {
@@ -700,6 +732,7 @@ function highlightCurrent() {
 let pageAbort: AbortController | null = null;
 
 function once() {
+  buildSidebarTree();  // populate the persistent sidebar TOC from toc.json
   wireControls();   // delegated on document — persists
   wireAuth();       // AuthBar lives in the persistent sidebar
   wireNav();        // toggle/backdrop/sidebar persist; keydown on document

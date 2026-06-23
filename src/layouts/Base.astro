@@ -1,14 +1,11 @@
 ---
 import '../styles/global.css';
 import { ViewTransitions } from 'astro:transitions';
-import Tree from '../components/Tree.astro';
 import NavBar from '../components/NavBar.astro';
 import AuthBar from '../components/AuthBar.astro';
-import { buildTree } from '../lib/content';
 interface Props { title: string; current?: string; home?: boolean; }
-const { title, current, home = false } = Astro.props;
+const { title, home = false } = Astro.props;
 const base = import.meta.env.BASE_URL;
-const tree = buildTree();
 
 const MANUAL = 'Global Wayfinding Meditation Manual';
 const host = Astro.site?.host ?? 'globway.top';
@@ -59,8 +56,10 @@ const description =
         </a>
         <AuthBar />
         <NavBar />
-        <nav aria-label="Table of contents">
-          <Tree nodes={tree} current={current} showWordcount={false} />
+        <nav aria-label="Table of contents" data-toc>
+          {/* The TOC tree is built once client-side from toc.json and persists
+              across navigations (see buildSidebarTree in app.ts) — keeping it out
+              of every page's HTML, which shrinks each section page ~5×. */}
         </nav>
         <footer class="sidebar-foot">
           A rearranged reading of the

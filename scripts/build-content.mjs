@@ -201,6 +201,20 @@ fs.writeFileSync(
   path.join(OUT, 'aliases.json'),
   JSON.stringify({ aliasToCanonical, aliasMap }, null, 0)
 );
+// Lightweight nested TOC (key/title/depth/children only — no bodies) for the
+// sidebar tree, which is built once client-side and persisted across navigations
+// instead of being server-rendered into all ~587 pages. Mirrors buildTree() in
+// src/lib/content.ts but trimmed; bundled into the client JS (small, cached once).
+{
+  const tnodes = new Map(sections.map((s) => [s.key, { key: s.key, title: s.title, depth: s.depth, children: [] }]));
+  const troots = [];
+  for (const s of sections) {
+    const n = tnodes.get(s.key);
+    if (s.parent && tnodes.has(s.parent)) tnodes.get(s.parent).children.push(n);
+    else troots.push(n);
+  }
+  fs.writeFileSync(path.join(OUT, 'toc.json'), JSON.stringify(troots, null, 0));
+}
 // Decks ship as static assets the presenter fetches once (cached), rather than
 // inlining ~0.5 MB into the page HTML.
 fs.mkdirSync(path.join(ROOT, 'public'), { recursive: true });
