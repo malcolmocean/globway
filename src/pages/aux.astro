@@ -1,31 +1,16 @@
 ---
 import Base from '../layouts/Base.astro';
+import Presenter from '../components/Presenter.astro';
 import { sectionHref } from '../lib/content';
 const base = import.meta.env.BASE_URL;
-// Standalone presenter for the 959 preliminary/auxiliary practices. Content is
-// fetched once from /aux.json and rendered one practice at a time, keyed by ?p=.
-// Practices are NOT global sections (kept out of the sidebar/tree/random); their
-// read/star/hide state still syncs because section_state keys on any string.
-const appendix1 = sectionHref(base, 'appendix-1-preliminary-auxiliary-practices-names-on');
+// The 959 preliminary/auxiliary practices, one at a time. Indexed by Appendix 1;
+// practices are NOT global sections (kept out of the sidebar/tree/random), but
+// their read/star/hide state still syncs because section_state keys on any string.
 ---
 <Base title="Auxiliary practice — Globway">
-  <article class="content aux" data-aux data-src={`${base}aux.json`}>
-    <div class="crumbs"><a href={appendix1}>‹ Appendix 1 — all preliminary/auxiliary practices</a></div>
-
-    <div class="controls" data-aux-controls hidden>
-      <button type="button" data-action="read" data-key="" aria-pressed="false"><span aria-hidden="true">✓</span> Read</button>
-      <button type="button" data-action="star" data-key="" aria-pressed="false"><span aria-hidden="true">★</span> Star</button>
-      <button type="button" data-action="hide" data-key="" aria-pressed="false" class="hide-btn"><span aria-hidden="true">⊘</span> Hide</button>
-      <span class="aux-count" data-aux-count></span>
-    </div>
-
-    <h1 data-aux-title>Loading…</h1>
-    <div data-aux-body></div>
-
-    <nav class="pager aux-pager">
-      <a class="prev" data-aux-prev href="#">←</a>
-      <button type="button" class="pill jump" data-action="aux-random" title="Random practice">🎲 random</button>
-      <a class="next" data-aux-next href="#">→</a>
-    </nav>
-  </article>
+  <Presenter
+    src={`${base}aux.json`}
+    backHref={sectionHref(base, 'appendix-1-preliminary-auxiliary-practices-names-on')}
+    backLabel="‹ Appendix 1 — all preliminary/auxiliary practices"
+  />
 </Base>

@@ -1,0 +1,27 @@
+---
+// Shared one-item-at-a-time presenter for decks (aux / p3 / p8). Fetches the
+// deck JSON once, renders one card by ?p=<key> (or ?r=1 for a random card), and
+// steps through with prev/next/random. read/star/hide reuse the global toggle —
+// state syncs because section_state keys on any string. Behaviour: app.ts initDeck.
+interface Props { src: string; backHref: string; backLabel: string; }
+const { src, backHref, backLabel } = Astro.props;
+---
+<article class="content deck" data-deck data-src={src}>
+  <div class="crumbs"><a href={backHref}>{backLabel}</a></div>
+
+  <div class="controls" data-deck-controls hidden>
+    <button type="button" data-action="read" data-key="" aria-pressed="false"><span aria-hidden="true">✓</span> Read</button>
+    <button type="button" data-action="star" data-key="" aria-pressed="false"><span aria-hidden="true">★</span> Star</button>
+    <button type="button" data-action="hide" data-key="" aria-pressed="false" class="hide-btn"><span aria-hidden="true">⊘</span> Hide</button>
+    <span class="aux-count" data-deck-count></span>
+  </div>
+
+  <h1 data-deck-title>Loading…</h1>
+  <div data-deck-body></div>
+
+  <nav class="pager aux-pager">
+    <a class="prev" data-deck-prev href="#">←</a>
+    <button type="button" class="pill jump" data-action="deck-random" title="Random card">🎲 random</button>
+    <a class="next" data-deck-next href="#">→</a>
+  </nav>
+</article>

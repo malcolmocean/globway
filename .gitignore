@@ -5,6 +5,8 @@ dist/
 src/data/sections.json
 src/data/aliases.json
 public/aux.json
+public/p3.json
+public/p8.json
 # local env (Supabase keys)
 .env
 .env.local

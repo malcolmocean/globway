@@ -1,14 +1,10 @@
 ---
-// Sidebar quick-nav: filter pills (filter the TOC tree in place, document-wide),
-// landmark jumps, and a random not-hidden section. Behaviour lives in app.ts.
+// Sidebar quick-nav. Row 1: filter pills (filter the TOC tree in place,
+// document-wide) + a 🎲 that draws a random section FROM the active filter.
+// Row 2: a jump to the pre/aux index, then deck-draw buttons that open the
+// shared presenter on a random card (?r=1). Behaviour lives in app.ts.
 import { sectionHref } from '../lib/content';
 const base = import.meta.env.BASE_URL;
-// Landmark jump buttons — edit freely; keys are real section anchors.
-const landmarks = [
-  { label: 'pre/aux', key: 'preliminary-auxiliary-practices' },
-  { label: 'p3', key: 'p3' },
-  { label: 'p8', key: 'p8' },
-];
 const filters = [
   { id: 'all', label: 'All' },
   { id: 'starred', label: '★' },
@@ -16,17 +12,24 @@ const filters = [
   { id: 'unread', label: 'Unread' },
   { id: 'hidden', label: '⊘ Hidden' },
 ];
+// Decks viewable one card at a time (see /aux, /p3, /p8). ?r=1 = random draw.
+const decks = [
+  { label: 'aux', href: `${base}aux?r=1` },
+  { label: 'p3', href: `${base}p3?r=1` },
+  { label: 'p8', href: `${base}p8?r=1` },
+];
 ---
 <div class="navbar" data-navbar>
   <div class="navbar-row" role="group" aria-label="Filter the table of contents">
     {filters.map((f) => (
       <button type="button" class="pill" data-filter={f.id} aria-pressed={f.id === 'all' ? 'true' : 'false'}>{f.label}</button>
     ))}
+    <button type="button" class="pill jump" data-action="random-view" title="Random section in the current view">🎲</button>
   </div>
   <div class="navbar-row">
-    {landmarks.map((l) => (
-      <a class="pill jump" href={sectionHref(base, l.key)}>{l.label}</a>
+    <a class="pill jump" href={sectionHref(base, 'preliminary-auxiliary-practices')}>pre/aux</a>
+    {decks.map((d) => (
+      <a class="pill jump draw" href={d.href} title={`Draw a random ${d.label} card`}>🎲 {d.label}</a>
     ))}
-    <button type="button" class="pill jump" data-action="random-jump" title="Jump to a random section">🎲</button>
   </div>
 </div>

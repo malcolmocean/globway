@@ -1,0 +1,10 @@
+---
+import Base from '../layouts/Base.astro';
+import Presenter from '../components/Presenter.astro';
+import { sectionHref } from '../lib/content';
+const base = import.meta.env.BASE_URL;
+// p8's prompt list, one card at a time. The full list also lives at /s/p8.
+---
+<Base title="p8 — Globway">
+  <Presenter src={`${base}p8.json`} backHref={sectionHref(base, 'p8')} backLabel="‹ p8 (full list)" />
+</Base>

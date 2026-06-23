@@ -69,9 +69,10 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .tree .row.is-hidden { opacity: .5; }
 .tree .row.is-hidden .t { text-decoration: line-through; }
 
-/* aux practice presenter */
-.aux .pager.aux-pager { align-items: baseline; }
+/* deck presenter (/aux, /p3, /p8) */
+.deck .pager.aux-pager { align-items: baseline; }
 .aux-pager .pill.jump { flex: none; }
+.pill.draw { color: var(--text); }
 
 .tree, .tree ul { list-style: none; margin: 0; padding: 0; }
 .tree li { margin: 0; }

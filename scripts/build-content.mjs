@@ -169,6 +169,17 @@ function rewriteLinks(html) {
 for (const s of sections) s.html = rewriteLinks(s.html);
 for (const a of auxPractices) a.html = rewriteLinks(a.html);
 
+// ---- 4c. Decks: lists presented one item at a time by the shared presenter.
+// aux = the 959 auxiliary practices; p3/p8 = the prompt lists inside those two
+// sections, split into one card per top-level <li>. All share the same {items}
+// shape so /aux, /p3, /p8 reuse one presenter (see src/components/Presenter.astro).
+const byKeySection = new Map(sections.map((s) => [s.key, s]));
+const decks = {
+  aux: auxPractices.map((p) => ({ key: p.key, title: p.title, order: p.order, html: p.html })),
+  p3: buildListDeck('p3'),
+  p8: buildListDeck('p8'),
+};
+
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(
   path.join(OUT, 'sections.json'),
@@ -178,19 +189,46 @@ fs.writeFileSync(
   path.join(OUT, 'aliases.json'),
   JSON.stringify({ aliasToCanonical, aliasMap }, null, 0)
 );
-// Aux practices ship as a static asset the /aux presenter fetches once (cached),
-// rather than inlining ~0.5 MB into that page's HTML.
+// Decks ship as static assets the presenter fetches once (cached), rather than
+// inlining ~0.5 MB into the page HTML.
 fs.mkdirSync(path.join(ROOT, 'public'), { recursive: true });
-fs.writeFileSync(
-  path.join(ROOT, 'public', 'aux.json'),
-  JSON.stringify({ count: auxPractices.length, practices: auxPractices }, null, 0)
-);
+for (const [name, items] of Object.entries(decks)) {
+  fs.writeFileSync(
+    path.join(ROOT, 'public', `${name}.json`),
+    JSON.stringify({ count: items.length, items }, null, 0)
+  );
+}
 
 console.log(
   `Wrote ${sections.length} sections (${Object.keys(aliasToCanonical).length} anchors). ` +
     `TOC items: ${tocItems.length}, located: ${located.length}. ` +
-    `Aux practices: ${auxPractices.length}.`
+    `Decks: ${Object.entries(decks).map(([n, i]) => `${n}=${i.length}`).join(', ')}.`
 );
+
+// Split a section's prompt list(s) into one card per TOP-LEVEL <li> (nested
+// sub-bullets ride along inside their parent card). Used for p3/p8, whose content
+// is a deck of prompts with no per-item anchors.
+function buildListDeck(sectionKey) {
+  const s = byKeySection.get(sectionKey);
+  if (!s) { console.warn(`! deck source section not found: ${sectionKey}`); return []; }
+  const root = parseHtml(s.html);
+  const items = [];
+  for (const li of root.querySelectorAll('li')) {
+    let anc = li.parentNode, nested = false;
+    while (anc) { if ((anc.tagName || '').toUpperCase() === 'LI') { nested = true; break; } anc = anc.parentNode; }
+    if (nested) continue; // only top-level items become cards
+    const text = (li.text || '').replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    const order = items.length;
+    items.push({
+      key: `${sectionKey}-${order + 1}`,
+      title: text.length > 80 ? text.slice(0, 79).trimEnd() + '…' : text,
+      order,
+      html: li.innerHTML,
+    });
+  }
+  return items;
+}
 
 // Pair Appendix 1's ordered name-links with Appendix 2's ordered practice headers
 // (counts are equal). Each practice's key is the Appendix-1 slug (uniquified on

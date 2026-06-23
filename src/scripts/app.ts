@@ -113,8 +113,10 @@ function orderedRows() {
   });
   return out;
 }
-function randomJump() {
-  const candidates = orderedRows().filter((r) => !(state[r.key] || {}).hidden);
+/** Random section drawn from the CURRENT filter view (page/starred/unread/…). */
+function randomInView() {
+  const f = currentFilter();
+  const candidates = orderedRows().filter((r) => rowMatches(r.key, f));
   if (!candidates.length) return;
   location.href = candidates[Math.floor(Math.random() * candidates.length)].href;
 }
@@ -242,86 +244,91 @@ function wireControls() {
       applyFilter(f);
       return;
     }
-    // random not-hidden section
-    if (target.closest('[data-action="random-jump"]')) randomJump();
+    // random section within the current filter view
+    if (target.closest('[data-action="random-view"]')) randomInView();
   });
 }
 
-// ---- aux practice presenter (/aux?p=<key>) ---------------------------------
-// Renders one of the 959 preliminary/auxiliary practices at a time from the
-// fetched-once /aux.json. read/star/hide reuse the global toggle (state syncs by
-// key); prev/next/random step through practice order in place.
-type AuxPractice = { key: string; title: string; order: number; html: string };
-async function initAux() {
-  const root = document.querySelector<HTMLElement>('[data-aux]');
+// ---- deck presenter (/aux, /p3, /p8) ---------------------------------------
+// One shared presenter for any deck (a list of cards): fetch its JSON once, render
+// one card by ?p=<key> (or ?r=1 for a random card), step with prev/next/random.
+// read/star/hide reuse the global toggle (state syncs by key); the deck name comes
+// from the page path so /aux?p=, /p3?p=, /p8?p= all work from one code path.
+type DeckItem = { key: string; title: string; order: number; html: string };
+async function initDeck() {
+  const root = document.querySelector<HTMLElement>('[data-deck]');
   if (!root) return;
-  const src = root.dataset.src || 'aux.json';
-  const basePrefix = src.replace(/aux\.json$/, ''); // e.g. "/" or "/globway/"
+  const src = root.dataset.src!;                                 // e.g. "/p8.json"
+  const basePrefix = src.replace(/[^/]+\.json$/, '');            // "/" or "/globway/"
+  const deck = src.replace(/^.*\/([^/]+)\.json$/, '$1');         // "aux" | "p3" | "p8"
   const $ = <T extends Element>(sel: string) => root.querySelector<T>(sel)!;
-  const titleEl = $<HTMLElement>('[data-aux-title]');
-  const bodyEl = $<HTMLElement>('[data-aux-body]');
-  const controls = $<HTMLElement>('[data-aux-controls]');
-  const countEl = $<HTMLElement>('[data-aux-count]');
-  const prevEl = $<HTMLAnchorElement>('[data-aux-prev]');
-  const nextEl = $<HTMLAnchorElement>('[data-aux-next]');
+  const titleEl = $<HTMLElement>('[data-deck-title]');
+  const bodyEl = $<HTMLElement>('[data-deck-body]');
+  const controls = $<HTMLElement>('[data-deck-controls]');
+  const countEl = $<HTMLElement>('[data-deck-count]');
+  const prevEl = $<HTMLAnchorElement>('[data-deck-prev]');
+  const nextEl = $<HTMLAnchorElement>('[data-deck-next]');
 
-  let practices: AuxPractice[] = [];
-  let byKeyAux = new Map<string, AuxPractice>();
+  let items: DeckItem[] = [];
+  let byKey = new Map<string, DeckItem>();
   try {
     const data = await (await fetch(src)).json();
-    practices = data.practices || [];
-    byKeyAux = new Map(practices.map((p) => [p.key, p]));
+    items = data.items || [];
+    byKey = new Map(items.map((p) => [p.key, p]));
   } catch {
-    titleEl.textContent = 'Could not load practices.';
+    titleEl.textContent = 'Could not load this list.';
     return;
   }
-  if (!practices.length) { titleEl.textContent = 'No practices found.'; return; }
+  if (!items.length) { titleEl.textContent = 'Nothing here.'; return; }
 
-  const paramKey = () => {
-    const p = new URLSearchParams(location.search).get('p');
-    return p && byKeyAux.has(p) ? p : practices[0].key;
-  };
-  const auxHref = (key: string) => `${basePrefix}aux?p=${encodeURIComponent(key)}`;
-  function setNav(el: HTMLAnchorElement, t: AuxPractice | undefined, dir: 'prev' | 'next') {
+  const randomKey = () => items[Math.floor(Math.random() * items.length)].key;
+  const deckHref = (key: string) => `${basePrefix}${deck}?p=${encodeURIComponent(key)}`;
+  function setNav(el: HTMLAnchorElement, t: DeckItem | undefined, dir: 'prev' | 'next') {
     if (!t) { el.hidden = true; return; }
     el.hidden = false;
-    el.href = auxHref(t.key);
+    el.href = deckHref(t.key);
     el.textContent = dir === 'prev' ? `← ${t.title}` : `${t.title} →`;
   }
   function render(key: string) {
-    const p = byKeyAux.get(key);
+    const p = byKey.get(key);
     if (!p) return;
     titleEl.textContent = p.title;
     bodyEl.innerHTML = p.html.replaceAll('@@BASE@@', basePrefix);
     controls.hidden = false;
     controls.querySelectorAll<HTMLElement>('[data-action][data-key]').forEach((b) => b.setAttribute('data-key', key));
     applyEntry(key);
-    countEl.textContent = `${p.order + 1} / ${practices.length}`;
-    setNav(prevEl, practices[p.order - 1], 'prev');
-    setNav(nextEl, practices[p.order + 1], 'next');
+    countEl.textContent = `${p.order + 1} / ${items.length}`;
+    setNav(prevEl, items[p.order - 1], 'prev');
+    setNav(nextEl, items[p.order + 1], 'next');
     document.title = `${p.title} — Globway`;
   }
   function go(key: string) {
-    history.pushState({}, '', auxHref(key));
+    history.pushState({}, '', deckHref(key));
     render(key);
     window.scrollTo(0, 0);
   }
   root.addEventListener('click', (e) => {
     const t = e.target as HTMLElement;
-    const nav = t.closest<HTMLAnchorElement>('[data-aux-prev],[data-aux-next]');
+    const nav = t.closest<HTMLAnchorElement>('[data-deck-prev],[data-deck-next]');
     if (nav && !nav.hidden) {
       e.preventDefault();
       const k = new URL(nav.href).searchParams.get('p');
       if (k) go(k);
       return;
     }
-    if (t.closest('[data-action="aux-random"]')) {
-      e.preventDefault();
-      go(practices[Math.floor(Math.random() * practices.length)].key);
-    }
+    if (t.closest('[data-action="deck-random"]')) { e.preventDefault(); go(randomKey()); }
   });
-  window.addEventListener('popstate', () => render(paramKey()));
-  render(paramKey());
+  window.addEventListener('popstate', () => render(startKey()));
+  // ?r=1 → land on a random card (used by the navbar draw buttons); else ?p=<key>.
+  function startKey() {
+    const q = new URLSearchParams(location.search);
+    if (q.get('r')) return randomKey();
+    const p = q.get('p');
+    return p && byKey.has(p) ? p : items[0].key;
+  }
+  const first = startKey();
+  if (new URLSearchParams(location.search).get('r')) history.replaceState({}, '', deckHref(first));
+  render(first);
 }
 
 // ---- boot -------------------------------------------------------------------
@@ -329,7 +336,7 @@ async function boot() {
   wireControls();
   wireAuth();
   applyAll();
-  initAux();
+  initDeck();
   if (sb) {
     const session = await getSession();
     renderAuth(session);
