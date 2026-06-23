@@ -1,6 +1,6 @@
 # little things
 
-1 nav stuff
+[x] 1 nav stuff
   - add a way to view a list of only starred sections
   - sidebar should just have... a bunch of random jump buttons:
     - p3, p8, pre/aux, starred, read, unread, any not-hidden section/page
@@ -19,9 +19,12 @@
   - or mobile stuff
   - eg aux pages currently have the title/main name duplicated, once with a colon, once without
   - for this, take screenshots of the before & afters, and present them all to me on a temporary not-committed html page
+  - eg pages that just say "[This (super)section intentionally left blank. Scroll down for the contentful subsections!]"
+    - should have sub-tables-of-contents on them
 
 4 auto/passive read state (verbatim from Malcolm, don't telephone-game this):
   - "we also should be tracking a less-controllable/manual "read" state; maybe that's what we want for "read" anyway; something more like "did you scroll to the bottom of this" or "if it was short no-scrolly page, did you stay on it for more than X seconds (where X might be wordcount x 0.01 minutes). less "mark as read", more passively revealed"
   - "I think we should continue to offer the read button, but it should also just auto-trigger when you scroll to the bottom of a page / have spent enough time on it.
+  - and something like maybe tracking pages-in-progress, relatedly. okay I think I'm complicating things and you should tuck this as a new TODO item"
 
-    and something like maybe tracking pages-in-progress, relatedly. okay I think I'm complicating things and you should tuck this as a new TODO item"
+
