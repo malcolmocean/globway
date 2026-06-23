@@ -23,7 +23,7 @@
     - should have sub-tables-of-contents on them
   - eg left sidebar should auto-scroll to show the active page (vertically-centered if possible)
 
-4 auto/passive read state:
+[x] 4 auto/passive read state:
   - we also should be tracking a less-controllable/manual "read" state; maybe that's what we want for "read" anyway; something more 
   like "did you scroll to the bottom of this" or "if it was short no-scrolly page, did you stay on it for more than X seconds (where X 
   might be wordcount x 0.01 minutes). less "mark as read", more passively revealed"
@@ -38,3 +38,8 @@
     - or you can clear the in-progress state from the in-progress page with an x
     - I guess it should also store in-progress if you like... jump away via the sidebar or via a link mid-page?
  
+[x] 5: tiny things:
+  - [x] we should make a dice SECTION that just has an outer rounded border, then a die, then page/aux/p3/p8 buttons.
+    - (for the sidebar top)
+  - [x] gitignore /src/data if that's correct
+  -  

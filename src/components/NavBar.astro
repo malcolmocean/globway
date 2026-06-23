@@ -21,16 +21,21 @@ const decks = [
 ];
 ---
 <div class="navbar" data-navbar>
+  <div class="dicebox" role="group" aria-label="Jump to something at random">
+    <span class="dice-die" aria-hidden="true">🎲</span>
+    <div class="dice-draws">
+      <button type="button" class="pill jump" data-action="random-view" title="Random section in the current view">page</button>
+      {decks.map((d) => (
+        <a class="pill jump draw" href={d.href} title={`Draw a random ${d.label} card`}>{d.label}</a>
+      ))}
+    </div>
+  </div>
   <div class="navbar-row" role="group" aria-label="Filter the table of contents">
     {filters.map((f) => (
       <button type="button" class="pill" data-filter={f.id} aria-pressed={f.id === 'all' ? 'true' : 'false'}>{f.label}</button>
     ))}
-    <button type="button" class="pill jump" data-action="random-view" title="Random section in the current view">🎲</button>
   </div>
   <div class="navbar-row">
-    <a class="pill jump" href={sectionHref(base, 'preliminary-auxiliary-practices')}>pre/aux</a>
-    {decks.map((d) => (
-      <a class="pill jump draw" href={d.href} title={`Draw a random ${d.label} card`}>🎲 {d.label}</a>
-    ))}
+    <a class="pill jump" href={sectionHref(base, 'preliminary-auxiliary-practices')}>pre/aux index</a>
   </div>
 </div>

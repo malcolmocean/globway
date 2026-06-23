@@ -104,6 +104,12 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 /* sidebar quick-nav: filter pills + landmark/random jumps */
 .navbar { margin: .25rem 0 .6rem; display: flex; flex-direction: column; gap: .3rem; }
 .navbar-row { display: flex; flex-wrap: wrap; gap: .3rem; }
+/* "Roll the dice" box — a die emblem plus random-draw buttons (page / aux / p3 / p8). */
+.dicebox { display: flex; align-items: center; gap: .55rem;
+  padding: .4rem .55rem; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--bg-elev); }
+.dice-die { font-size: 1.4rem; line-height: 1; flex: none; }
+.dice-draws { display: flex; flex-wrap: wrap; gap: .3rem; }
 .pill { font: inherit; font-size: 12px; cursor: pointer; padding: .12rem .5rem; border-radius: 999px;
   border: 1px solid var(--line); background: var(--bg-elev); color: var(--text); text-decoration: none; line-height: 1.5; }
 .pill:hover { border-color: var(--accent); }
@@ -187,6 +193,7 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
   gap: .15rem .6rem; flex: 1; min-width: 0; text-decoration: none; color: var(--text); }
 .ip-link:hover .ip-title { text-decoration: underline; }
 .ip-title { grid-column: 1; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ip-star { color: var(--star); }
 .ip-pct { grid-column: 2; grid-row: 1 / span 2; color: var(--muted); font-size: 12px;
   font-variant-numeric: tabular-nums; }
 .ip-bar { grid-column: 1; height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; }
@@ -196,7 +203,18 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
   background: var(--bg); color: var(--muted); }
 .ip-clear:hover { border-color: var(--muted); color: var(--text); }
 
-.home { max-width: 60rem; margin: 0 auto; }
+.home { max-width: 60rem; margin: 0 auto; container-type: inline-size; }
+/* Title is tuned to roughly fill the home column on screens wider than ~500px
+   (cqw = 1% of the .home container width); below that it wraps at a readable size. */
+.home-head { margin: 0 0 1.3rem; }
+.home-title {
+  margin: 0; font-weight: 700; line-height: 1.1; letter-spacing: -0.015em;
+  text-wrap: balance; font-size: clamp(1.4rem, 4.02cqw, 2.9rem);
+}
+.home-subtitle {
+  margin: .25rem 0 0; color: var(--muted); font-style: italic;
+  line-height: 1.15; font-size: clamp(1.1rem, 3.55cqw, 2.45rem);
+}
 .home-img { display: block; }
 .home-img img {
   display: block; width: 100%; height: auto; border-radius: 10px;
