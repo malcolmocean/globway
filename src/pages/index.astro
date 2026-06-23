@@ -1,24 +1,32 @@
 ---
 import Base from '../layouts/Base.astro';
-import Tree from '../components/Tree.astro';
-import { buildTree, sections } from '../lib/content';
-const tree = buildTree();
-const totalWords = sections.reduce((a, s) => a + s.wordcount, 0);
+const base = import.meta.env.BASE_URL;
+const tweet = 'https://twitter.com/Malcolm_Ocean/status/1574463817177878529';
 ---
-<Base title="Globway — Table of Contents">
-  <div class="map">
-    <div class="map-head">
-      <h1>Table of Contents</h1>
-      <p class="meta">
-        {sections.length} sections · {totalWords.toLocaleString()} words ·
-        <span data-progress>0 read</span>
+<Base title="Global Wayfinding Meditation Manual" home>
+  <div class="home">
+    <a class="home-img" href={tweet} rel="noopener" target="_blank">
+      <img src={`${base}gwhf.jpg`} width="1920" height="1080"
+        alt="Do stuff that seems good (including nothing) as it seems good, recognizing that your sense of goodness is ever-evolving. Let go of doing stuff if that seems good—you may have more stuff you're still doing that you forgot you kept doing, than you realize. Let your practice evolve too, including your interpretation of these instructions and whether or not you're even conceiving of yourself as following them, by paying attention to what seems to work and not work. Nothing is off-limits; it's a giant puzzle. Have fun!" />
+    </a>
+    <blockquote class="home-quote">
+      <p>
+        Do stuff that seems good (including nothing) as it seems good,
+        recognizing that your sense of goodness is ever-evolving. Let go of
+        doing stuff if that seems good—you may have more stuff you're still
+        doing that you forgot you kept doing, than you realize.
       </p>
-      <p class="meta" data-when="signed-out" hidden>
-        Marks save on this device. Sign in (top-left) to sync phone ↔ computer.
+      <p>
+        Let your practice evolve too, including your interpretation of these
+        instructions and whether or not you're even conceiving of yourself as
+        following them, by paying attention to what seems to work and not work.
+        Nothing is off-limits; it's a giant puzzle. Have fun!
       </p>
-    </div>
-    <div class="map-wrap">
-      <Tree nodes={tree} showWordcount={true} />
-    </div>
+      <footer>
+        — Malcolm Ocean, summarizing Mark Lippmann's Manual of Global
+        Wayfinding Meditation; this site is a mirror of
+        <a href="https://meditationbook.page" rel="noopener" target="_blank">the original</a>.
+      </footer>
+    </blockquote>
   </div>
 </Base>

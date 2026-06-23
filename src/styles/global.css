@@ -5,7 +5,7 @@
   --text: #232020;
   --muted: #847d75;
   --line: #e3ddd4;
-  --accent: #7a5af0;
+  --accent: #345051;
   --read: #2f9e6f;
   --read-tint: #e8f5ee;
   --star: #d99a09;
@@ -21,11 +21,11 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #18161a; --bg-elev: #201d22; --sidebar-bg: #1c1a1f; --text: #e8e3dd;
-    --muted: #9b938b; --line: #322e36; --accent: #a78bfa; --read: #4ec38c;
+    --muted: #9b938b; --line: #322e36; --accent: #79a8a9; --read: #4ec38c;
     --read-tint: #16291f; --star: #e8b73b; --star-tint: #2a2412;
     /* black shadows vanish on the near-black sidebar, and a heavy one muddies the
        text below — use a soft accent-tinted glow instead to lift the pinned row. */
-    --pin-shadow: 0 4px 10px -2px rgba(167,139,250,.32);
+    --pin-shadow: 0 4px 10px -2px rgba(121,168,169,.32);
   }
 }
 * { box-sizing: border-box; }
@@ -167,6 +167,21 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .map-head h1 { margin: 0 0 .25rem; font-size: 1.8rem; }
 .map-wrap { max-width: 60rem; margin: 0 auto; }
 .map .tree .row { padding-top: .2rem; padding-bottom: .2rem; }
+
+/* home page */
+.home { max-width: 60rem; margin: 0 auto; }
+.home-img { display: block; }
+.home-img img {
+  display: block; width: 100%; height: auto; border-radius: 10px;
+  border: 1px solid var(--line);
+}
+.home-quote {
+  border-left: 3px solid var(--accent); margin: 1.5rem 0 1rem;
+  padding: .2rem 0 .2rem 1.2rem; font-size: 1.08rem; line-height: 1.55;
+}
+.home-quote p { margin: 0 0 .9rem; }
+.home-quote footer { color: var(--muted); font-size: .95rem; }
+.home-quote footer a { color: var(--muted); }
 
 /* section controls */
 .controls { display:flex; gap:.5rem; align-items:center; margin:.25rem 0 1.5rem;

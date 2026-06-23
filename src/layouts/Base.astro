@@ -4,18 +4,40 @@ import Tree from '../components/Tree.astro';
 import NavBar from '../components/NavBar.astro';
 import AuthBar from '../components/AuthBar.astro';
 import { buildTree } from '../lib/content';
-interface Props { title: string; current?: string; }
-const { title, current } = Astro.props;
+interface Props { title: string; current?: string; home?: boolean; }
+const { title, current, home = false } = Astro.props;
 const base = import.meta.env.BASE_URL;
 const tree = buildTree();
+
+const MANUAL = 'Global Wayfinding Meditation Manual';
+const host = Astro.site?.host ?? 'globway.top';
+const pageTitle = home ? `${MANUAL} [mirror at ${host}]` : `${title} ༄ ${MANUAL}`;
+const ogImage = new URL(`${base}gwhf.jpg`, Astro.site ?? `https://${host}`).href;
+const canonical = new URL(Astro.url.pathname, Astro.site ?? `https://${host}`).href;
+const description =
+  "An interactive mirror of Mark Lippmann's Manual of Global Wayfinding Meditation.";
 ---
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{title}</title>
+    <title>{pageTitle}</title>
     <meta name="color-scheme" content="light dark" />
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={MANUAL} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1920" />
+    <meta property="og:image:height" content="1080" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
   </head>
   <body>
     <button type="button" class="nav-toggle" data-nav-toggle aria-label="Table of contents">

@@ -55,7 +55,7 @@ const next = s.next ? byKey.get(s.next) : null;
 // blank…]" — for those we drop that placeholder and let the sub-TOC stand in.
 const kids = childrenOf(s.key);
 ---
-<Base title={`${s.title} — Globway`} current={s.key}>
+<Base title={s.title} current={s.key}>
   <article class="content">
     {crumbs.length > 0 && (
       <div class="crumbs">
