@@ -100,7 +100,7 @@ for (let i = 0; i < byLine.length; i++) {
 // Canonical key = the TOC target (a slug). Aliases = every id on the header line
 // of the slice (captures legacy numeric ids like "5", "177q") + the target itself.
 const aliasMap = {}; // canonicalKey -> [aliases]
-const sections = located
+let sections = located
   .sort((a, b) => a.order - b.order)
   .map((t) => {
     const start = t.line;
@@ -131,6 +131,12 @@ const sections = located
       html: rewritten,
     };
   });
+
+// ---- 4a. Site curation (fork-layer, NOT upstream) ---------------------------
+// protocol-source/* stays a pristine mirror of Mark's repo so it can be synced /
+// PR'd upstream cleanly. Fork-specific presentation changes live here, keyed to
+// Mark's stable anchors so they re-apply across his updates. (cf. stripDeadNavLinks.)
+sections = curateFrontMatter(sections, aliasMap);
 
 // Reading order + prev/next + parent (nearest preceding shallower item)
 sections.forEach((s, i) => {
@@ -294,6 +300,76 @@ function buildAuxPractices() {
 }
 
 // ---- helpers ----------------------------------------------------------------
+// Fork-layer curation: merge the scattered front-matter sections (working title …
+// copyright, plus funding / canonical location / linking guarantees) into ONE
+// section, insert a fork-attribution note, and reframe funding for a fork. Keyed
+// to Mark's anchors; merged-away anchors are folded in as aliases of the survivor
+// so their links/redirects still land here. Returns the new (shorter) sections[].
+function curateFrontMatter(sections, aliasMap) {
+  const INTO = 'working-title';
+  const TITLE = 'colophon';
+
+  const FORK_NOTE =
+    '<div class="fork-note" id="this-fork">\n' +
+    '<strong>This is a fork.</strong> This interactive, rearranged edition was created by ' +
+    '<a href="https://malcolmocean.com/?utm_source=globway&amp;utm_medium=fork">Malcolm Ocean</a>' +
+    ' — one of the lightly-transformed forks permitted above. It may lag the canonical original (linked below). ' +
+    'Each section here has its own stable, shareable URL, meant to keep working even as the text is revised.\n' +
+    '</div>';
+
+  const FUNDING =
+    '<h1 id="funding"><span id="7"></span>Funding:</h1>\n' +
+    '<p>Please support Mark Lippmann’s open-access original work: ' +
+    '<a href="https://www.patreon.com/meditationstuff">https://www.patreon.com/meditationstuff</a><br>\n' +
+    '(This fork is free; funds go to the original author.)</p>';
+
+  // Content order within the merged section. Plain keys pull that section's html;
+  // @-tokens inject fork content. Order encodes "blob between copyright & canon".
+  const ORDER = [
+    'working-title', 'front-quotes', 'byline', 'collaborators-and-credits', 'copyright',
+    '@fork', 'canonical-location-of-this-document', '@funding',
+  ];
+  // Sections absorbed into INTO and dropped from the tree. Not all are re-shown:
+  // Mark's verbose (hyper)linking-guarantees section is folded away entirely —
+  // replaced by one line in the fork note about THIS edition's own permalinks.
+  const ABSORB = [
+    'front-quotes', 'byline', 'collaborators-and-credits', 'copyright',
+    'canonical-location-of-this-document',
+    'hyper-linking-deep-linking-anchor-linking-soft-guarantees', 'funding',
+  ];
+
+  const byKey = new Map(sections.map((s) => [s.key, s]));
+  const into = byKey.get(INTO);
+  if (!into) { console.warn(`! front-matter curation: '${INTO}' not found — skipped`); return sections; }
+
+  const parts = [];
+  for (const tok of ORDER) {
+    if (tok === '@fork') { parts.push(FORK_NOTE); continue; }
+    if (tok === '@funding') { parts.push(FUNDING); continue; }
+    const s = byKey.get(tok);
+    if (!s) { console.warn(`! front-matter curation: section '${tok}' not found`); continue; }
+    parts.push(s.html);
+  }
+  into.html = parts.join('\n');
+  into.title = TITLE;
+
+  // Fold absorbed sections' anchors into INTO so deep links / in-text links resolve.
+  const removed = new Set();
+  const aliases = new Set(into.aliases);
+  for (const k of ABSORB) {
+    const s = byKey.get(k);
+    if (!s) continue;
+    removed.add(k);
+    for (const a of aliasMap[k] || s.aliases || []) aliases.add(a);
+    delete aliasMap[k];
+  }
+  into.aliases = [...aliases];
+  aliasMap[into.key] = into.aliases;
+  into.wordcount = into.html.replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length;
+
+  return sections.filter((s) => !removed.has(s.key));
+}
+
 function postProcess(html) {
   html = stripDeadNavLinks(html);
   // strip ids that would collide? keep them — useful for in-page sub-anchors.

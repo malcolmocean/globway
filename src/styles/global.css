@@ -134,6 +134,9 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .content img { max-width: 100%; height: auto; }
 .content pre { overflow-x: auto; background: var(--bg-elev); padding: .75rem; border-radius: 8px; border:1px solid var(--line); }
 .content blockquote { border-left: 3px solid var(--line); margin: 1rem 0; padding: .1rem 1rem; color: var(--muted); }
+.fork-note { margin: 1.2rem 0; padding: .7rem .95rem; border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-elev)); }
 .pager { display:flex; justify-content: space-between; gap:1rem; margin-top: 3rem; padding-top:1rem;
   border-top: 1px solid var(--line); font-family: ui-sans-serif, system-ui, sans-serif; font-size: 14px; }
 .pager a { max-width: 45%; }

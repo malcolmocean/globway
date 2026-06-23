@@ -9,7 +9,7 @@
     - they currently don't work, but maybe also they aren't really needed here
   - change "The Map" to just Table of Contents
 
-2 merge "working title through copyright"
+[x] 2 merge "working title through copyright"
   - move "canonical location" into this merge & linking guarantees as well
   - add a blob between copyright & canon that indicates "this is one such fork, created by [Malcolm Ocean](https://malcolmocean.com?utm...)"
   - I think add funding section to that part, might want to rephrase or something given this is a fork
@@ -21,6 +21,7 @@
   - for this, take screenshots of the before & afters, and present them all to me on a temporary not-committed html page
   - eg pages that just say "[This (super)section intentionally left blank. Scroll down for the contentful subsections!]"
     - should have sub-tables-of-contents on them
+  - eg left sidebar should auto-scroll to show the active page (vertically-centered if possible)
 
 4 auto/passive read state (verbatim from Malcolm, don't telephone-game this):
   - "we also should be tracking a less-controllable/manual "read" state; maybe that's what we want for "read" anyway; something more like "did you scroll to the bottom of this" or "if it was short no-scrolly page, did you stay on it for more than X seconds (where X might be wordcount x 0.01 minutes). less "mark as read", more passively revealed"
