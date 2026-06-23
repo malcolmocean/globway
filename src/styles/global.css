@@ -112,6 +112,11 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 
 .tree .row.filtered-out { display: none; }
 .tree .row.is-hidden { opacity: .5; }
+/* partway-through marker: a half-filled dot (distinct from the solid read dot). */
+.tree .row.is-inprogress .dot {
+  border-color: var(--accent);
+  background: linear-gradient(90deg, var(--accent) 0 50%, transparent 50% 100%);
+}
 
 /* Sidebar only: parent rows stick to the top as you scroll, stacking like
    breadcrumbs (current item's ancestors), and release at their next sibling.
@@ -169,6 +174,28 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .map .tree .row { padding-top: .2rem; padding-bottom: .2rem; }
 
 /* home page */
+/* Home "Continue reading" panel — sections you're partway through. Hidden until
+   app.ts finds in-progress state, so first-time visitors see a clean hero. */
+.inprogress-panel { margin: 0 0 1.6rem; padding: .9rem 1.1rem;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg-elev);
+  font-family: ui-sans-serif, system-ui, sans-serif; }
+.inprogress-panel .ip-h { font-size: .8rem; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--muted); margin: 0 0 .6rem; }
+.ip-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+.ip-item { display: flex; align-items: center; gap: .5rem; }
+.ip-link { display: grid; grid-template-columns: 1fr auto; align-items: center;
+  gap: .15rem .6rem; flex: 1; min-width: 0; text-decoration: none; color: var(--text); }
+.ip-link:hover .ip-title { text-decoration: underline; }
+.ip-title { grid-column: 1; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ip-pct { grid-column: 2; grid-row: 1 / span 2; color: var(--muted); font-size: 12px;
+  font-variant-numeric: tabular-nums; }
+.ip-bar { grid-column: 1; height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.ip-fill { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.ip-clear { flex: none; font: inherit; font-size: 18px; line-height: 1; cursor: pointer;
+  width: 1.7rem; height: 1.7rem; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--muted); }
+.ip-clear:hover { border-color: var(--muted); color: var(--text); }
+
 .home { max-width: 60rem; margin: 0 auto; }
 .home-img { display: block; }
 .home-img img {
@@ -197,6 +224,27 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .bottom-controls { margin: 1.5rem 0 0; }
 .crumbs { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px; color: var(--muted); margin-bottom: .25rem; }
 .crumbs a { color: var(--muted); }
+
+/* Sticky header band in the main column: breadcrumbs + heading + read/star/hide
+   pin to the top of the viewport while reading a long section. The heading is
+   lifted out of the article body (see s/[key].astro) so it travels with the
+   controls, which float to the right of it on the same row. */
+.section-head {
+  position: sticky; top: 0; z-index: 5;
+  background: var(--bg); margin: 0 0 1.2rem;
+  padding: .5rem 0 .5rem; border-bottom: 1px solid var(--line);
+}
+.section-head .crumbs { margin-bottom: .3rem; }
+.section-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.section-head-row .section-h { flex: 1; min-width: 0; }
+.section-head-row .section-h :is(h1, p) { margin: 0; }
+.section-head-row .controls { flex: none; margin: .1rem 0 0; }
+@media (max-width: 800px) {
+  /* Let the controls drop below a long heading; nudge the band clear of the
+     floating ☰ Contents button (fixed top-left). */
+  .section-head .crumbs { padding-left: 6.2rem; min-height: 1.4rem; }
+  .section-head-row { flex-wrap: wrap; }
+}
 
 /* article */
 .content { overflow-wrap: break-word; } /* keep long URLs from overflowing on mobile */

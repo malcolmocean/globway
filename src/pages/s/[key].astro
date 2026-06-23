@@ -44,6 +44,16 @@ const s = byKey.get(key!)!;
 // sub-table-of-contents below stands in for it (the section's <h1> is kept).
 const html = resolveBase(s.html, base)
   .replace(/<p>\s*\[This\s*\(?\s*super\s*\)?\s*section intentionally left blank[\s\S]*?\]\s*<\/p>/i, '');
+// Lift the section's heading out of the body so it can live in the sticky header
+// band alongside the breadcrumbs and read/star/hide controls. Two heading shapes
+// occur: major sections render a leading <h1>…</h1>; minor sections render their
+// title as a leading "<p><span id=…></span> <strong>Title</strong></p>". Match
+// either (else leave the body untouched and the band just carries crumbs+controls).
+const headMatch =
+  html.match(/^\s*<h1[\s\S]*?<\/h1>/i) ||
+  html.match(/^\s*<p>\s*<span id="[^"]*"><\/span>\s*<strong>[\s\S]*?<\/strong>[\s\S]*?<\/p>/i);
+const headingHtml = headMatch ? headMatch[0] : '';
+const bodyHtml = headMatch ? html.slice(headMatch[0].length) : html;
 // breadcrumb ancestors
 const crumbs: { key: string; title: string }[] = [];
 let p = s.parent;
@@ -56,16 +66,23 @@ const next = s.next ? byKey.get(s.next) : null;
 const kids = childrenOf(s.key);
 ---
 <Base title={s.title} current={s.key}>
-  <article class="content">
-    {crumbs.length > 0 && (
-      <div class="crumbs">
-        {crumbs.map((c, i) => (
-          <>{i > 0 && ' › '}<a href={sectionHref(base, c.key)}>{c.title}</a></>
-        ))}
+  <article class="content" data-section-key={s.key} data-wordcount={s.wordcount}>
+    <div class="section-head" data-section-head>
+      {crumbs.length > 0 && (
+        <div class="crumbs">
+          {crumbs.map((c, i) => (
+            <>{i > 0 && ' › '}<a href={sectionHref(base, c.key)}>{c.title}</a></>
+          ))}
+        </div>
+      )}
+      <div class="section-head-row">
+        {headingHtml
+          ? <div class="section-h" set:html={headingHtml} />
+          : <div class="section-h"><h1>{s.title}</h1></div>}
+        <SectionControls sectionKey={s.key} />
       </div>
-    )}
-    <SectionControls sectionKey={s.key} />
-    <div set:html={html} />
+    </div>
+    <div set:html={bodyHtml} />
     {kids.length > 0 && (
       <nav class="subtoc" aria-label="Sections in this part">
         <h2 class="subtoc-h">In this part</h2>

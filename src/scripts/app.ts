@@ -5,9 +5,17 @@
 //   3. Supabase not configured           -> local only (dev / pre-setup).
 import { getSupabase, isConfigured } from '../lib/supabase';
 
-type Entry = { read?: boolean; starred?: boolean; hidden?: boolean; updated_at: string };
+type Entry = { read?: boolean; starred?: boolean; hidden?: boolean; progress?: number; updated_at: string };
 type State = Record<string, Entry>;
-type Filter = 'all' | 'starred' | 'read' | 'unread' | 'hidden';
+type Filter = 'all' | 'starred' | 'read' | 'unread' | 'inprogress' | 'hidden';
+
+// A section is "in progress" iff partway scrolled (0<progress<1) and not yet
+// read/hidden. Reaching the end sets read + clears progress, so the two are
+// mutually exclusive by construction.
+function inProgress(e: Entry | undefined): boolean {
+  const p = (e && e.progress) || 0;
+  return p > 0 && p < 1 && !e!.read && !e!.hidden;
+}
 
 const LS_KEY = 'globway:state';
 const FILTER_KEY = 'globway:filter';
@@ -34,11 +42,13 @@ function applyEntry(key: string) {
     row.classList.toggle('is-read', !!e.read);
     row.classList.toggle('is-starred', !!e.starred);
     row.classList.toggle('is-hidden', !!e.hidden);
+    row.classList.toggle('is-inprogress', inProgress(e));
   });
 }
 function applyAll() {
   Object.keys(state).forEach(applyEntry);
   refreshProgress();
+  renderInProgress();
   applyFilter(currentFilter());
   updatePager();
   document.querySelectorAll<HTMLElement>('[data-preamble]').forEach((r) => {
@@ -74,30 +84,117 @@ function refreshProgress() {
 }
 
 // ---- mutations --------------------------------------------------------------
+/** The full row we upsert for one key (read/star/hide/progress + timestamps). */
+function rowPayload(userId: string, key: string) {
+  const e = state[key] || ({} as Entry);
+  const prog = e.progress ?? 0;
+  return {
+    user_id: userId, section_key: key,
+    read: !!e.read, starred: !!e.starred, hidden: !!e.hidden, progress: prog,
+    read_at: e.read ? e.updated_at : null,
+    progress_at: prog > 0 ? e.updated_at : null,
+    updated_at: e.updated_at,
+  };
+}
+async function syncRow(key: string) {
+  if (!sb) return;
+  const session = await getSession();
+  if (!session) return;
+  const { error } = await sb.from('section_state')
+    .upsert(rowPayload(session.user.id, key), { onConflict: 'user_id,section_key' });
+  if (error) console.warn('[globway] sync upsert failed:', error.message);
+}
+
+/** Reflect a single key's local mutation into all the affected DOM. */
+function reflect(key: string) {
+  applyEntry(key);
+  refreshProgress();
+  renderInProgress();
+  applyFilter(currentFilter()); // (un)hiding / (un)reading changes what the filter shows
+  updatePager();                // hiding shifts a page's prev/next neighbours
+}
+
 async function toggle(key: string, field: 'read' | 'starred' | 'hidden') {
   const cur = state[key] || { updated_at: '' };
   const next: Entry = { ...cur, [field]: !cur[field], updated_at: new Date().toISOString() };
+  if (field === 'read' && next.read) next.progress = 0; // finishing clears in-progress
   state[key] = next;
   saveLocal(state);
+  reflect(key);
+  await syncRow(key);
+}
+
+/** Idempotent "mark read" used by passive auto-read (scroll-to-end / dwell). */
+async function setRead(key: string) {
+  const cur = state[key] || { updated_at: '' };
+  if (cur.read) return;
+  state[key] = { ...cur, read: true, progress: 0, updated_at: new Date().toISOString() };
+  saveLocal(state);
+  reflect(key);
+  await syncRow(key);
+}
+
+/** Record max scroll depth (monotonic) for a section; debounce the remote sync. */
+let progressTimer = 0;
+function recordProgress(key: string, frac: number) {
+  const cur = state[key] || { updated_at: '' };
+  if (cur.read || cur.hidden) return;
+  if ((cur.progress ?? 0) >= frac) return; // progress only ever grows
+  state[key] = { ...cur, progress: frac, updated_at: new Date().toISOString() };
+  saveLocal(state);
   applyEntry(key);
-  refreshProgress();
-  applyFilter(currentFilter()); // (un)hiding / (un)reading changes what the filter shows
-  updatePager();                // hiding shifts a page's prev/next neighbours
-  if (sb && (await getSession())) {
-    const { error } = await sb.from('section_state').upsert(
-      { user_id: (await getSession())!.user.id, section_key: key,
-        read: !!next.read, starred: !!next.starred, hidden: !!next.hidden,
-        read_at: next.read ? next.updated_at : null, updated_at: next.updated_at },
-      { onConflict: 'user_id,section_key' }
-    );
-    if (error) console.warn('[globway] sync upsert failed:', error.message);
-  }
+  renderInProgress();
+  if (progressTimer) clearTimeout(progressTimer);
+  progressTimer = window.setTimeout(() => { progressTimer = 0; syncRow(key); }, 1500);
+}
+
+/** Clear a section's in-progress state (the × in the home "Continue reading" panel). */
+async function clearProgress(key: string) {
+  const cur = state[key];
+  if (!cur || !(cur.progress ?? 0)) return;
+  state[key] = { ...cur, progress: 0, updated_at: new Date().toISOString() };
+  saveLocal(state);
+  reflect(key);
+  await syncRow(key);
+}
+
+// ---- home "Continue reading" panel -----------------------------------------
+function escapeHtml(s: string) {
+  return s.replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
+/** Populate the home in-progress panel from state ∩ sidebar rows (title + href). */
+function renderInProgress() {
+  const panel = document.querySelector<HTMLElement>('[data-inprogress-panel]');
+  if (!panel) return;
+  const list = panel.querySelector<HTMLElement>('[data-inprogress-list]');
+  if (!list) return;
+  const meta = new Map(orderedRows().map((r) => [r.key, r]));
+  const items = Object.entries(state)
+    .filter(([k, e]) => inProgress(e) && meta.has(k))
+    .map(([k, e]) => ({ ...meta.get(k)!, progress: e.progress!, at: e.updated_at || '' }))
+    .sort((a, b) => b.at.localeCompare(a.at));
+  if (!items.length) { panel.hidden = true; list.innerHTML = ''; return; }
+  panel.hidden = false;
+  list.innerHTML = items.map((it) => {
+    const pct = Math.max(1, Math.round(it.progress * 100));
+    const title = escapeHtml(it.title);
+    return `<li class="ip-item">` +
+      `<a class="ip-link" href="${escapeHtml(it.href)}">` +
+        `<span class="ip-title">${title}</span>` +
+        `<span class="ip-bar"><span class="ip-fill" style="width:${pct}%"></span></span>` +
+        `<span class="ip-pct">${pct}%</span>` +
+      `</a>` +
+      `<button type="button" class="ip-clear" data-clear-progress data-key="${escapeHtml(it.key)}" ` +
+        `aria-label="Clear ${title} from in progress">×</button>` +
+    `</li>`;
+  }).join('');
 }
 
 // ---- filtering / random / pager --------------------------------------------
 function currentFilter(): Filter {
   const f = localStorage.getItem(FILTER_KEY) as Filter | null;
-  return f && ['all', 'starred', 'read', 'unread', 'hidden'].includes(f) ? f : 'all';
+  return f && ['all', 'starred', 'read', 'unread', 'inprogress', 'hidden'].includes(f) ? f : 'all';
 }
 function rowMatches(key: string, f: Filter): boolean {
   const e = state[key] || {};
@@ -105,6 +202,7 @@ function rowMatches(key: string, f: Filter): boolean {
     case 'starred': return !!e.starred;
     case 'read': return !!e.read;
     case 'unread': return !e.read && !e.hidden;
+    case 'inprogress': return inProgress(e);
     case 'hidden': return !!e.hidden;
     case 'all': default: return !e.hidden;
   }
@@ -174,7 +272,7 @@ async function pullRemote() {
   if (error) { console.warn('[globway] pull failed:', error.message); return; }
   const remote: State = {};
   for (const r of data || []) remote[r.section_key] = {
-    read: r.read, starred: r.starred, hidden: r.hidden,
+    read: r.read, starred: r.starred, hidden: r.hidden, progress: r.progress ?? 0,
     updated_at: r.updated_at || new Date(0).toISOString(),
   };
   // Merge: last-write-wins by updated_at. Push local-only/newer entries up.
@@ -183,15 +281,18 @@ async function pullRemote() {
     const re = remote[key];
     if (!re || (le.updated_at || '') > (re.updated_at || '')) {
       remote[key] = le;
+      const prog = le.progress ?? 0;
       upserts.push({ user_id: session.user.id, section_key: key,
-        read: !!le.read, starred: !!le.starred, hidden: !!le.hidden,
-        read_at: le.read ? le.updated_at : null, updated_at: le.updated_at });
+        read: !!le.read, starred: !!le.starred, hidden: !!le.hidden, progress: prog,
+        read_at: le.read ? le.updated_at : null,
+        progress_at: prog > 0 ? le.updated_at : null, updated_at: le.updated_at });
     }
   }
   if (upserts.length) await sb.from('section_state').upsert(upserts, { onConflict: 'user_id,section_key' });
   state = remote;
   saveLocal(state);
   applyAll();
+  maybeRestoreScroll(); // remote may have a newer progress to resume from
 }
 
 let signinExpanded = false;
@@ -270,7 +371,10 @@ function wireControls() {
       return;
     }
     // random section within the current filter view
-    if (target.closest('[data-action="random-view"]')) randomInView();
+    if (target.closest('[data-action="random-view"]')) { randomInView(); return; }
+    // × clear an entry from the home "Continue reading" panel
+    const clr = target.closest<HTMLElement>('[data-clear-progress][data-key]');
+    if (clr) { clearProgress(clr.getAttribute('data-key')!); return; }
   });
 }
 
@@ -469,12 +573,94 @@ function revealBottomControls() {
   el.hidden = document.documentElement.scrollHeight <= window.innerHeight + 100;
 }
 
+// ---- passive read state (TODO #4) ------------------------------------------
+// On a section page we (a) auto-mark "read" once you reach the end (scrollable
+// pages) or dwell long enough (short / no-scroll pages), (b) remember how far you
+// got so the home "Continue reading" panel can resume, and (c) auto-restore that
+// scroll position on return. Scoped to /s/<key> pages (they carry data-section-key).
+let trackKey: string | null = null;
+let userScrolled = false;
+
+function pageScrollMax() { return document.documentElement.scrollHeight - window.innerHeight; }
+function isScrollable() { return pageScrollMax() > 24; } // 24px slop = "doesn't really scroll"
+function topFraction() {
+  const max = pageScrollMax();
+  return max <= 0 ? 0 : Math.min(1, Math.max(0, window.scrollY / max));
+}
+function reachedEnd() {
+  return window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 48;
+}
+
+// Auto-scroll back to where you left off — but never once the user has taken the
+// wheel, or if there's a #hash, or the page is too short / already read. Safe to
+// call repeatedly (recomputes from the live scrollHeight); it no-ops after input.
+function maybeRestoreScroll() {
+  if (userScrolled || !trackKey || location.hash) return;
+  const e = state[trackKey] || {};
+  if (e.read) { userScrolled = true; return; } // nothing to resume; stop trying
+  const p = e.progress ?? 0;
+  if (p < 0.05 || p > 0.95 || !isScrollable()) return;
+  window.scrollTo({ top: p * pageScrollMax(), behavior: 'smooth' });
+}
+
+function initReadTracking() {
+  const host = document.querySelector<HTMLElement>('[data-section-key]');
+  if (!host) return;                                   // not a section page
+  // Own the scroll position: otherwise the browser restores its native position
+  // (e.g. the bottom, after a refresh) and fights — or pre-empts — our resume.
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  trackKey = host.dataset.sectionKey!;
+  const wordcount = parseInt(host.dataset.wordcount || '0', 10) || 0;
+  if ((state[trackKey] || {}).read) return;            // already read: nothing to track
+
+  // Note genuine user input (not our own programmatic smooth-scroll), so
+  // auto-restore never yanks someone who's already started reading.
+  ['wheel', 'touchstart', 'keydown'].forEach((ev) =>
+    window.addEventListener(ev, () => { userScrolled = true; }, { once: true, passive: true }));
+
+  // Short, non-scrolling pages can't report progress — mark read after a dwell
+  // proportional to length (the "wordcount × 0.01 min" idea), clamped to 8–90s.
+  let dwell = 0;
+  const armDwell = () => {
+    if (dwell || isScrollable() || (state[trackKey!] || {}).read) return;
+    const ms = Math.min(90000, Math.max(8000, Math.round(wordcount * 600)));
+    dwell = window.setTimeout(() => setRead(trackKey!), ms);
+  };
+
+  let raf = 0;
+  const onScroll = () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      if (!trackKey || (state[trackKey] || {}).read) return;
+      if (!isScrollable()) return;
+      if (reachedEnd()) setRead(trackKey);
+      else recordProgress(trackKey, topFraction());
+    });
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', armDwell);
+
+  // Flush any debounced progress write when the page is hidden / navigated away.
+  const flush = () => { if (trackKey) syncRow(trackKey); };
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flush();
+  });
+
+  armDwell();
+  maybeRestoreScroll();
+  // Re-try once fonts/layout settle — scrollHeight (hence the restore target) shifts.
+  window.addEventListener('load', () => { armDwell(); maybeRestoreScroll(); });
+}
+
 // ---- boot -------------------------------------------------------------------
 async function boot() {
   wireControls();
   wireAuth();
   wireNav();
   applyAll();
+  initReadTracking();
   initDeck();
   computeStickyTops();
   scrollSidebarToCurrent();
