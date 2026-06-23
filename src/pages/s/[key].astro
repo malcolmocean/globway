@@ -104,8 +104,5 @@ const kids = childrenOf(s.key);
       {next ? <a class="next" href={sectionHref(base, next.key)}>{next.title} →</a> : <span></span>}
     </nav>
     <p class="meta">{s.wordcount} words · {s.kind}{s.aliases.length > 1 ? ` · also: ${s.aliases.filter((a) => a !== s.key).join(', ')}` : ''}</p>
-    <div class="controls bottom-controls" data-bottom-controls hidden>
-      <button type="button" data-action="star" data-key={s.key} aria-pressed="false"><span aria-hidden="true">★</span> Star</button>
-    </div>
   </article>
 </Base>

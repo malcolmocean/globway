@@ -565,14 +565,6 @@ function wireNav() {
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
 }
 
-// A bottom star only earns its place on pages long enough to scroll — by the time
-// you've reached the end, the top control is far away. Hidden on short pages.
-function revealBottomControls() {
-  const el = document.querySelector<HTMLElement>('[data-bottom-controls]');
-  if (!el) return;
-  el.hidden = document.documentElement.scrollHeight <= window.innerHeight + 100;
-}
-
 // ---- passive read state (TODO #4) ------------------------------------------
 // On a section page we (a) auto-mark "read" once you reach the end (scrollable
 // pages) or dwell long enough (short / no-scroll pages), (b) remember how far you
@@ -666,8 +658,7 @@ async function boot() {
   scrollSidebarToCurrent();
   updateStickyShadows();
   document.querySelector('.sidebar')?.addEventListener('scroll', onSidebarScroll, { passive: true });
-  revealBottomControls();
-  window.addEventListener('resize', () => { revealBottomControls(); computeStickyTops(); updateStickyShadows(); });
+  window.addEventListener('resize', () => { computeStickyTops(); updateStickyShadows(); });
   window.addEventListener('load', () => { computeStickyTops(); updateStickyShadows(); }); // re-measure after fonts settle
   if (sb) {
     const session = await getSession();

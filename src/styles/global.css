@@ -221,7 +221,6 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .controls button[data-action=star].is-on { background: var(--star-tint); border-color: var(--star); color: var(--star); }
 .controls button[data-action=hide].is-on { background: var(--bg-elev); border-color: var(--muted); color: var(--muted); text-decoration: line-through; }
 .aux-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.bottom-controls { margin: 1.5rem 0 0; }
 .crumbs { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px; color: var(--muted); margin-bottom: .25rem; }
 .crumbs a { color: var(--muted); }
 
