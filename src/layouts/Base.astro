@@ -18,6 +18,10 @@ const tree = buildTree();
     <meta name="color-scheme" content="light dark" />
   </head>
   <body>
+    <button type="button" class="nav-toggle" data-nav-toggle aria-label="Table of contents">
+      <span aria-hidden="true">☰</span> Contents
+    </button>
+    <div class="nav-backdrop" data-nav-backdrop></div>
     <div class="app">
       <aside class="sidebar">
         <a class="brand" href={base}>

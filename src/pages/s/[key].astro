@@ -1,7 +1,7 @@
 ---
 import Base from '../../layouts/Base.astro';
 import SectionControls from '../../components/SectionControls.astro';
-import { sections, byKey, resolveBase, sectionHref } from '../../lib/content';
+import { sections, byKey, resolveBase, sectionHref, childrenOf } from '../../lib/content';
 
 export function getStaticPaths() {
   const canonical = new Set(sections.map((s) => s.key));
@@ -40,13 +40,20 @@ if (redirectTo) {
 }
 
 const s = byKey.get(key!)!;
-const html = resolveBase(s.html, base);
+// Drop the "[This (super)section intentionally left blank…]" placeholder — the
+// sub-table-of-contents below stands in for it (the section's <h1> is kept).
+const html = resolveBase(s.html, base)
+  .replace(/<p>\s*\[This\s*\(?\s*super\s*\)?\s*section intentionally left blank[\s\S]*?\]\s*<\/p>/i, '');
 // breadcrumb ancestors
 const crumbs: { key: string; title: string }[] = [];
 let p = s.parent;
 while (p) { const a = byKey.get(p); if (!a) break; crumbs.unshift({ key: a.key, title: a.title }); p = a.parent; }
 const prev = s.prev ? byKey.get(s.prev) : null;
 const next = s.next ? byKey.get(s.next) : null;
+// Super-sections list their child sections as a sub-table-of-contents. Many are
+// pure containers whose only body is "[This (super)section intentionally left
+// blank…]" — for those we drop that placeholder and let the sub-TOC stand in.
+const kids = childrenOf(s.key);
 ---
 <Base title={`${s.title} — Globway`} current={s.key}>
   <article class="content">
@@ -59,6 +66,22 @@ const next = s.next ? byKey.get(s.next) : null;
     )}
     <SectionControls sectionKey={s.key} />
     <div set:html={html} />
+    {kids.length > 0 && (
+      <nav class="subtoc" aria-label="Sections in this part">
+        <h2 class="subtoc-h">In this part</h2>
+        <ul class="tree">
+          {kids.map((c) => (
+            <li>
+              <a class="row" data-subtoc-key={c.key} href={sectionHref(base, c.key)}>
+                <span class="dot" aria-hidden="true"></span>
+                <span class="t">{c.title}</span>
+                <span class="star" aria-hidden="true">★</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    )}
     <nav class="pager">
       {prev ? <a class="prev" href={sectionHref(base, prev.key)}>← {prev.title}</a> : <span></span>}
       {next ? <a class="next" href={sectionHref(base, next.key)}>{next.title} →</a> : <span></span>}

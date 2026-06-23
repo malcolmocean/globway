@@ -12,6 +12,9 @@
   --star-tint: #fbf3dd;
   --maxw: 46rem;
   --sidebar-w: 20rem;
+  --sidebar-pad: .75rem;
+  /* drop-shadow under a pinned sidebar parent that's hiding content */
+  --pin-shadow: 0 6px 7px -4px rgba(0,0,0,.34);
   font-synthesis: none;
   -webkit-text-size-adjust: 100%;
 }
@@ -20,6 +23,9 @@
     --bg: #18161a; --bg-elev: #201d22; --sidebar-bg: #1c1a1f; --text: #e8e3dd;
     --muted: #9b938b; --line: #322e36; --accent: #a78bfa; --read: #4ec38c;
     --read-tint: #16291f; --star: #e8b73b; --star-tint: #2a2412;
+    /* black shadows vanish on the near-black sidebar, and a heavy one muddies the
+       text below — use a soft accent-tinted glow instead to lift the pinned row. */
+    --pin-shadow: 0 4px 10px -2px rgba(167,139,250,.32);
   }
 }
 * { box-sizing: border-box; }
@@ -35,14 +41,53 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .app { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
 .sidebar {
   background: var(--sidebar-bg); border-right: 1px solid var(--line);
-  position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 1rem 0.75rem;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 0;
   font-family: ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.4;
 }
-.main { padding: 2.2rem clamp(1rem, 4vw, 3rem); }
+/* Horizontal padding lives on the children (not the container) so the TOC rows —
+   and their pinned drop-shadows — span the full sidebar width. Vertical padding
+   too: a top pad on the container would sit above the sticky pin line and let
+   scrolling rows bleed in above the pinned headers. */
+.sidebar > .brand { padding: 1rem var(--sidebar-pad) 0; }
+.sidebar > .authbar,
+.sidebar > .navbar { padding-left: var(--sidebar-pad); padding-right: var(--sidebar-pad); }
+.sidebar > .sidebar-foot { padding-left: var(--sidebar-pad); padding-right: var(--sidebar-pad); padding-bottom: 1rem; }
+.sidebar .tree .row { padding-right: var(--sidebar-pad); }
+.sidebar .depth-0 > .row { padding-left: 1.1rem; }
+.sidebar .depth-1 > .row { padding-left: 1.85rem; }
+.sidebar .depth-2 > .row { padding-left: 2.75rem; }
+.sidebar .depth-3 > .row { padding-left: 3.65rem; }
+.sidebar .depth-4 > .row { padding-left: 4.45rem; }
+.sidebar .depth-5 > .row { padding-left: 5.25rem; }
+.main { padding: 2.2rem clamp(1rem, 4vw, 3rem); min-width: 0; }
 .content { max-width: var(--maxw); margin: 0 auto; }
+
+/* mobile drawer chrome — hidden on desktop */
+.nav-toggle { display: none; }
+.nav-backdrop { display: none; }
+
 @media (max-width: 800px) {
+  /* Sidebar becomes an off-canvas drawer; content takes the full width (which also
+     stops the wide TOC from forcing horizontal overflow on narrow screens). */
   .app { grid-template-columns: 1fr; }
-  .sidebar { position: static; height: auto; max-height: 60vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  .sidebar {
+    position: fixed; top: 0; left: 0; z-index: 50;
+    width: min(20rem, 86vw); height: 100vh; max-height: none;
+    border-right: 1px solid var(--line); border-bottom: 0;
+    transform: translateX(-100%); transition: transform .25s ease;
+    box-shadow: 2px 0 16px rgba(0,0,0,.18);
+  }
+  body.nav-open .sidebar { transform: translateX(0); }
+  .nav-toggle {
+    display: inline-flex; align-items: center; gap: .4rem; position: fixed; top: .6rem; left: .6rem; z-index: 60;
+    font: 600 13px/1 ui-sans-serif, system-ui, sans-serif; cursor: pointer;
+    padding: .5rem .7rem; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--bg-elev); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.12);
+  }
+  body.nav-open .nav-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.35);
+  }
+  .main { padding-top: 3.4rem; }
 }
 
 /* brand / topbar */
@@ -67,6 +112,16 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 
 .tree .row.filtered-out { display: none; }
 .tree .row.is-hidden { opacity: .5; }
+
+/* Sidebar only: parent rows stick to the top as you scroll, stacking like
+   breadcrumbs (current item's ancestors), and release at their next sibling.
+   Each row's `top` (stack offset) is computed from real ancestor heights in
+   app.ts so wrapped multi-line titles don't overlap. */
+.sidebar .tree .row.has-kids { position: sticky; top: 0; background: var(--sidebar-bg); }
+/* opaque version of the .current tint so pinned rows don't show content beneath */
+.sidebar .tree .row.has-kids.current { background: color-mix(in srgb, var(--accent) 16%, var(--sidebar-bg)); }
+/* shadow only while a pinned parent is actually hiding content beneath it (set by app.ts) */
+.sidebar .tree .row.has-kids.pinned-shadow { box-shadow: var(--pin-shadow); }
 .tree .row.is-hidden .t { text-decoration: line-through; }
 
 /* collapsible deck preamble (instructions) */
@@ -129,6 +184,7 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .crumbs a { color: var(--muted); }
 
 /* article */
+.content { overflow-wrap: break-word; } /* keep long URLs from overflowing on mobile */
 .content h1 { font-size: 1.7rem; line-height: 1.2; margin: 0 0 .6rem; }
 .content h1 a { color: var(--text); text-decoration: none; }
 .content img { max-width: 100%; height: auto; }
@@ -137,6 +193,12 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .fork-note { margin: 1.2rem 0; padding: .7rem .95rem; border: 1px solid var(--line);
   border-left: 3px solid var(--accent); border-radius: 8px;
   background: color-mix(in srgb, var(--accent) 9%, var(--bg-elev)); }
+/* sub-table-of-contents on super-section pages */
+.subtoc { margin: 1.5rem 0 0; }
+.subtoc-h { font-family: ui-sans-serif, system-ui, sans-serif; font-size: .8rem; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 0 0 .5rem; }
+.subtoc .tree { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 15px; }
+.subtoc .tree .row { padding: .25rem .4rem; }
 .pager { display:flex; justify-content: space-between; gap:1rem; margin-top: 3rem; padding-top:1rem;
   border-top: 1px solid var(--line); font-family: ui-sans-serif, system-ui, sans-serif; font-size: 14px; }
 .pager a { max-width: 45%; }

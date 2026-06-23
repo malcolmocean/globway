@@ -29,7 +29,8 @@ function applyEntry(key: string) {
     if (action === 'star') setPressed(el, !!e.starred);
     if (action === 'hide') setPressed(el, !!e.hidden);
   });
-  document.querySelectorAll<HTMLElement>(`[data-row-key="${cssEscape(key)}"]`).forEach((row) => {
+  const rowSel = `[data-row-key="${cssEscape(key)}"], [data-subtoc-key="${cssEscape(key)}"]`;
+  document.querySelectorAll<HTMLElement>(rowSel).forEach((row) => {
     row.classList.toggle('is-read', !!e.read);
     row.classList.toggle('is-starred', !!e.starred);
     row.classList.toggle('is-hidden', !!e.hidden);
@@ -296,10 +297,14 @@ async function initDeck() {
   let items: DeckItem[] = [];
   let byKey = new Map<string, DeckItem>();
   let deckPreamble = '';
+  let showTitle = true; // aux: card name is a real heading. p3: title repeats the body.
+  let bodyAsHeading = false; // p8: render the prompt itself as the (big) heading.
   try {
     const data = await (await fetch(src)).json();
     items = data.items || [];
     deckPreamble = data.preamble || '';
+    showTitle = data.showTitle !== false;
+    bodyAsHeading = !!data.bodyAsHeading;
     byKey = new Map(items.map((p) => [p.key, p]));
   } catch {
     titleEl.textContent = 'Could not load this list.';
@@ -327,8 +332,16 @@ async function initDeck() {
   function render(key: string) {
     const p = byKey.get(key);
     if (!p) return;
-    titleEl.textContent = p.title;
-    bodyEl.innerHTML = p.html.replaceAll('@@BASE@@', basePrefix);
+    const bodyHtml = p.html.replaceAll('@@BASE@@', basePrefix);
+    if (bodyAsHeading) {
+      titleEl.hidden = false;
+      titleEl.innerHTML = bodyHtml; // the prompt is the heading; no separate body
+      bodyEl.innerHTML = '';
+    } else {
+      titleEl.textContent = showTitle ? p.title : '';
+      titleEl.hidden = !showTitle;
+      bodyEl.innerHTML = bodyHtml;
+    }
     controls.hidden = false;
     controls.querySelectorAll<HTMLElement>('[data-action][data-key]').forEach((b) => b.setAttribute('data-key', key));
     applyEntry(key);
@@ -366,6 +379,88 @@ async function initDeck() {
   render(first);
 }
 
+// Scroll the sidebar so the current page's row sits at the vertical centre — deep
+// items are otherwise off-screen below the fold when you land on a page.
+function scrollSidebarToCurrent() {
+  const sidebar = document.querySelector<HTMLElement>('.sidebar');
+  const cur = document.querySelector<HTMLElement>('.sidebar a.row.current');
+  if (!sidebar || !cur) return;
+  const sRect = sidebar.getBoundingClientRect();
+  const cRect = cur.getBoundingClientRect();
+  sidebar.scrollTop += (cRect.top - sRect.top) - sidebar.clientHeight / 2 + cRect.height / 2;
+}
+
+// Sidebar parent rows are position:sticky so the current item's ancestors stack at
+// the top like breadcrumbs while you scroll. Their stack offset (`top`) must be the
+// summed height of their own ancestor rows — computed here because titles wrap to
+// varying heights, so a fixed per-depth offset would overlap. Deeper rows get a
+// lower z-index so they slide *under* their shallower (pinned) ancestors.
+function computeStickyTops() {
+  const sidebar = document.querySelector<HTMLElement>('.sidebar');
+  if (!sidebar) return;
+  sidebar.querySelectorAll<HTMLElement>('a.row.has-kids').forEach((row) => {
+    let top = 0, depth = 0;
+    let li = row.closest('li')?.parentElement?.closest('li') ?? null;
+    while (li) {
+      const arow = li.querySelector<HTMLElement>(':scope > a.row');
+      if (arow) { top += arow.getBoundingClientRect().height; depth++; }
+      li = li.parentElement?.closest('li') ?? null;
+    }
+    row.style.top = `${top}px`;
+    row.style.zIndex = String(50 - depth);
+  });
+}
+
+// A pinned parent casts a drop-shadow only while it's actually hiding content
+// beneath it — i.e. its first child has scrolled up under it (so an older sibling
+// of whatever's now on top is hidden). A parent sitting flush above its still-
+// visible first child gets none. Recomputed on sidebar scroll (rAF-throttled).
+function firstVisibleChildRow(parentRow: HTMLElement): HTMLElement | null {
+  const ul = parentRow.closest('li')?.querySelector(':scope > ul');
+  if (!ul) return null;
+  for (const li of Array.from(ul.children)) {
+    const a = li.querySelector<HTMLElement>(':scope > a.row');
+    if (a && a.getClientRects().length) return a; // skip filtered-out (display:none) rows
+  }
+  return null;
+}
+function updateStickyShadows() {
+  const sidebar = document.querySelector<HTMLElement>('.sidebar');
+  if (!sidebar) return;
+  sidebar.querySelectorAll<HTMLElement>('a.row.has-kids').forEach((row) => {
+    const r = row.getBoundingClientRect();
+    const li = row.closest('li')!.getBoundingClientRect();
+    // Pinned right now = sticky is holding the row back (li scrolled above it) AND
+    // its subtree still extends below (otherwise it has released and scrolled off).
+    const pinned = li.top < r.top - 0.5 && li.bottom > r.bottom + 1;
+    // First child is "hidden under" only once it's risen more than half a row above
+    // the parent's bottom — a flush pinned child sits ~at r.bottom (tolerate rounding).
+    const fc = firstVisibleChildRow(row);
+    const hiding = !!fc && fc.getBoundingClientRect().top < r.bottom - r.height * 0.6;
+    row.classList.toggle('pinned-shadow', pinned && hiding);
+  });
+}
+let shadowRaf = 0;
+function onSidebarScroll() {
+  if (shadowRaf) return;
+  shadowRaf = requestAnimationFrame(() => { shadowRaf = 0; updateStickyShadows(); });
+}
+
+// Mobile: the sidebar is an off-canvas drawer. A hamburger toggles it; tapping the
+// backdrop, a TOC link, or Escape closes it.
+function wireNav() {
+  const body = document.body;
+  const close = () => body.classList.remove('nav-open');
+  const open = () => { body.classList.add('nav-open'); computeStickyTops(); scrollSidebarToCurrent(); updateStickyShadows(); };
+  document.querySelectorAll<HTMLElement>('[data-nav-toggle]').forEach((b) =>
+    b.addEventListener('click', () => (body.classList.contains('nav-open') ? close() : open())));
+  document.querySelectorAll<HTMLElement>('[data-nav-backdrop]').forEach((b) =>
+    b.addEventListener('click', close));
+  document.querySelector('.sidebar nav[aria-label="Table of contents"]')
+    ?.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('a.row')) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+}
+
 // A bottom star only earns its place on pages long enough to scroll — by the time
 // you've reached the end, the top control is far away. Hidden on short pages.
 function revealBottomControls() {
@@ -378,10 +473,16 @@ function revealBottomControls() {
 async function boot() {
   wireControls();
   wireAuth();
+  wireNav();
   applyAll();
   initDeck();
+  computeStickyTops();
+  scrollSidebarToCurrent();
+  updateStickyShadows();
+  document.querySelector('.sidebar')?.addEventListener('scroll', onSidebarScroll, { passive: true });
   revealBottomControls();
-  window.addEventListener('resize', revealBottomControls);
+  window.addEventListener('resize', () => { revealBottomControls(); computeStickyTops(); updateStickyShadows(); });
+  window.addEventListener('load', () => { computeStickyTops(); updateStickyShadows(); }); // re-measure after fonts settle
   if (sb) {
     const session = await getSession();
     renderAuth(session);

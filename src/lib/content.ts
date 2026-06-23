@@ -39,6 +39,11 @@ export function buildTree(): TreeNode[] {
   return roots;
 }
 
+/** Direct children of a section, in reading order. */
+export function childrenOf(key: string): Section[] {
+  return sections.filter((s) => s.parent === key);
+}
+
 /** Resolve @@BASE@@ placeholders (in rewritten in-text links) to the real base. */
 export function resolveBase(html: string, base: string): string {
   return html.replaceAll('@@BASE@@', base.endsWith('/') ? base : base + '/');

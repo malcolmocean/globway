@@ -10,7 +10,7 @@ const base = import.meta.env.BASE_URL;
   {nodes.map((n) => (
     <li class={`depth-${n.depth}`}>
       <a
-        class={`row${n.key === current ? ' current' : ''}`}
+        class={`row${n.key === current ? ' current' : ''}${n.children.length > 0 ? ' has-kids' : ''}`}
         data-row-key={n.key}
         href={sectionHref(base, n.key)}
       >

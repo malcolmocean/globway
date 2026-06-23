@@ -181,10 +181,15 @@ for (const a of auxPractices) a.html = rewriteLinks(a.html);
 // shape so /aux, /p3, /p8 reuse one presenter (see src/components/Presenter.astro).
 const byKeySection = new Map(sections.map((s) => [s.key, s]));
 const decks = {
-  aux: { items: auxPractices.map((p) => ({ key: p.key, title: p.title, order: p.order, html: p.html })), preamble: '' },
+  // aux cards have real names (shown as the heading); p3/p8 "titles" are just the
+  // card's own text truncated for nav, so rendering them as a heading would repeat
+  // the body — showTitle=false suppresses that duplicate heading.
+  aux: { items: auxPractices.map((p) => ({ key: p.key, title: p.title, order: p.order, html: p.html })), preamble: '', showTitle: true },
   // p3 has no text before its list; its bolded lead item is the stem/instructions.
-  p3: buildListDeck('p3', { leadEmphasisPreamble: true }),
-  p8: buildListDeck('p8'),
+  p3: { ...buildListDeck('p3', { leadEmphasisPreamble: true }), showTitle: false },
+  // p8 cards are short prompts — show the full prompt itself as the (big) heading
+  // rather than as body text (bodyAsHeading avoids the 80-char title truncation).
+  p8: { ...buildListDeck('p8'), showTitle: false, bodyAsHeading: true },
 };
 
 fs.mkdirSync(OUT, { recursive: true });
@@ -202,7 +207,7 @@ fs.mkdirSync(path.join(ROOT, 'public'), { recursive: true });
 for (const [name, deck] of Object.entries(decks)) {
   fs.writeFileSync(
     path.join(ROOT, 'public', `${name}.json`),
-    JSON.stringify({ count: deck.items.length, items: deck.items, preamble: deck.preamble || '' }, null, 0)
+    JSON.stringify({ count: deck.items.length, items: deck.items, preamble: deck.preamble || '', showTitle: deck.showTitle !== false, bodyAsHeading: !!deck.bodyAsHeading }, null, 0)
   );
 }
 
@@ -294,7 +299,9 @@ function buildAuxPractices() {
     // bare slug -> first practice using it (for cross-links elsewhere)
     if (!(baseSlug in auxSlugToKey)) auxSlugToKey[baseSlug] = key;
     const { html } = postProcess(md.render(bodyMd));
-    practices.push({ key, title: names[i].name, order: i, html });
+    // The practice name is shown by the presenter as the card heading, so drop the
+    // body's own leading <h1> (which repeated the name with a trailing colon).
+    practices.push({ key, title: names[i].name, order: i, html: stripLeadingH1(html) });
   }
   return { auxPractices: practices, auxSlugToKey };
 }
@@ -387,7 +394,17 @@ function stripDeadNavLinks(html) {
   return html
     .replace(/\[?\s*<a\b[^>]*>\s*Go up to this[^<]*Table of Contents\s*<\/a>\s*\]?/gi, '')
     .replace(/\[?\s*<a\b[^>]*>\s*Go to the Partial Guided Tour[^<]*<\/a>\s*\]?/gi, '')
+    // Each aux practice ends with "[Click to go back to the corresponding entry in
+    // the "auxiliary names" appendix]" pointing at #Nauxiliary_names — an in-page
+    // anchor that doesn't exist in Globway's per-page model (the breadcrumb already
+    // links back to Appendix 1). Strip the dead link.
+    .replace(/\[?\s*<a\b[^>]*auxiliary_names[^>]*>[\s\S]*?<\/a>\s*\]?/gi, '')
     .replace(/<p>\s*<\/p>/gi, '');
+}
+
+// Drop a leading <h1>…</h1> (used by deck cards whose heading is shown separately).
+function stripLeadingH1(html) {
+  return html.replace(/^\s*<h1\b[^>]*>[\s\S]*?<\/h1>\s*/i, '');
 }
 function decodeEntities(s) {
   return s
