@@ -7,7 +7,7 @@
   "scripts": {
     "content": "node scripts/build-content.mjs",
     "dev": "npm run content && astro dev",
-    "build": "npm run content && astro build",
+    "build": "npm run content && astro build && node scripts/build-sw.mjs",
     "preview": "astro preview",
     "astro": "astro"
   },

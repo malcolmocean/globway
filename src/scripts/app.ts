@@ -265,10 +265,21 @@ async function getSession() {
   return data.session;
 }
 
+let pulling = false;
 async function pullRemote() {
-  if (!sb) return;
+  if (!sb || pulling) return;
   const session = await getSession();
   if (!session) return;
+  pulling = true;
+  try {
+    await pullRemoteInner(session);
+  } finally {
+    pulling = false;
+  }
+}
+
+async function pullRemoteInner(session: NonNullable<Awaited<ReturnType<typeof getSession>>>) {
+  if (!sb) return;
   const { data, error } = await sb.from('section_state').select('*');
   if (error) { console.warn('[globway] pull failed:', error.message); return; }
   const remote: State = {};
@@ -680,6 +691,9 @@ async function boot() {
     renderAuth(session);
     await pullRemote();
     sb.auth.onAuthStateChange((_evt, session) => { renderAuth(session); pullRemote(); });
+    // Back online after offline edits? Re-run the merge: pullRemote() pushes any
+    // local-newer rows up (last-write-wins) and pulls remote changes down.
+    window.addEventListener('online', () => { pullRemote(); });
   } else {
     renderAuth(null);
   }

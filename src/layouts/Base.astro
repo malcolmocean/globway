@@ -26,6 +26,11 @@ const description =
     <meta name="color-scheme" content="light dark" />
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
+    <link rel="manifest" href={`${base}manifest.webmanifest`} />
+    <meta name="theme-color" content="#0b0b0c" />
+    <link rel="apple-touch-icon" href={`${base}icons/icon-192.png`} />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Wayfinding" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content={MANUAL} />
     <meta property="og:title" content={pageTitle} />
@@ -67,6 +72,15 @@ const description =
     </div>
     <script>
       import '../scripts/app.ts';
+    </script>
+    <script is:inline define:vars={{ base }}>
+      // Register the offline service worker (generated at build time by
+      // scripts/build-sw.mjs). Guarded so dev (no sw.js) is a harmless no-op.
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register(base + 'sw.js').catch(() => {});
+        });
+      }
     </script>
   </body>
 </html>
