@@ -396,7 +396,7 @@ function wireControls() {
 // read/star/hide reuse the global toggle (state syncs by key); the deck name comes
 // from the page path so /aux?p=, /p3?p=, /p8?p= all work from one code path.
 type DeckItem = { key: string; title: string; order: number; html: string };
-async function initDeck() {
+async function initDeck(signal: AbortSignal) {
   const root = document.querySelector<HTMLElement>('[data-deck]');
   if (!root) return;
   const src = root.dataset.src!;                                 // e.g. "/p8.json"
@@ -481,8 +481,8 @@ async function initDeck() {
       return;
     }
     if (t.closest('[data-action="deck-random"]')) { e.preventDefault(); go(randomKey()); }
-  });
-  window.addEventListener('popstate', () => render(startKey()));
+  }, { signal });
+  window.addEventListener('popstate', () => render(startKey()), { signal });
   // ?r=1 → land on a random card (used by the navbar draw buttons); else ?p=<key>.
   function startKey() {
     const q = new URLSearchParams(location.search);
@@ -607,7 +607,10 @@ function maybeRestoreScroll() {
   window.scrollTo({ top: p * pageScrollMax(), behavior: 'smooth' });
 }
 
-function initReadTracking() {
+function initReadTracking(signal: AbortSignal) {
+  // Reset per-page tracking state (this runs on every client-side navigation).
+  trackKey = null;
+  userScrolled = false;
   const host = document.querySelector<HTMLElement>('[data-section-key]');
   if (!host) return;                                   // not a section page
   // Own the scroll position: otherwise the browser restores its native position
@@ -620,7 +623,7 @@ function initReadTracking() {
   // Note genuine user input (not our own programmatic smooth-scroll), so
   // auto-restore never yanks someone who's already started reading.
   ['wheel', 'touchstart', 'keydown'].forEach((ev) =>
-    window.addEventListener(ev, () => { userScrolled = true; }, { once: true, passive: true }));
+    window.addEventListener(ev, () => { userScrolled = true; }, { once: true, passive: true, signal }));
 
   // Short, non-scrolling pages can't report scroll progress — mark read after a
   // dwell proportional to length (~0.3s/word, clamped 8–90s). The dwell counts
@@ -653,43 +656,59 @@ function initReadTracking() {
       else recordProgress(trackKey, topFraction());
     });
   };
-  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('scroll', onScroll, { passive: true, signal });
   // A resize may flip scrollability (rotate / font reflow): re-evaluate the dwell.
-  window.addEventListener('resize', () => { dwellPause(); dwellResume(); });
+  window.addEventListener('resize', () => { dwellPause(); dwellResume(); }, { signal });
 
   // Pause the dwell + flush any debounced progress write when the tab is hidden or
   // the page is navigated away; resume counting once it's visible again.
   const flush = () => { if (trackKey) syncRow(trackKey); };
-  window.addEventListener('pagehide', () => { dwellPause(); flush(); });
+  window.addEventListener('pagehide', () => { dwellPause(); flush(); }, { signal });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') { dwellPause(); flush(); }
     else dwellResume();
-  });
+  }, { signal });
 
   dwellResume();
   maybeRestoreScroll();
   // Re-try once fonts/layout settle — scrollHeight (hence the restore target) shifts.
-  window.addEventListener('load', () => { dwellResume(); maybeRestoreScroll(); });
+  window.addEventListener('load', () => { dwellResume(); maybeRestoreScroll(); }, { signal });
 }
 
-// ---- boot -------------------------------------------------------------------
-async function boot() {
-  wireControls();
-  wireAuth();
-  wireNav();
-  applyAll();
-  initReadTracking();
-  initDeck();
-  computeStickyTops();
-  scrollSidebarToCurrent();
-  updateStickyShadows();
+// Register the offline service worker (generated at build time by
+// scripts/build-sw.mjs). Guarded so dev (no sw.js) is a harmless no-op.
+function registerSW() {
+  if (!('serviceWorker' in navigator)) return;
+  const base = import.meta.env.BASE_URL;
+  navigator.serviceWorker.register(base + 'sw.js').catch(() => {});
+}
+
+// The sidebar persists across client-side navigations, so its server-rendered
+// `.current` highlight is frozen on whatever page first loaded. Move it to match
+// the page now showing (section pages carry their canonical key on the article).
+function highlightCurrent() {
+  const cur = document.querySelector<HTMLElement>('[data-section-key]')?.dataset.sectionKey || null;
+  document.querySelectorAll<HTMLElement>('.sidebar a.row.current').forEach((a) => a.classList.remove('current'));
+  if (cur) document.querySelector<HTMLElement>(`.sidebar a.row[data-row-key="${cssEscape(cur)}"]`)?.classList.add('current');
+}
+
+// ---- boot lifecycle ---------------------------------------------------------
+// With <ClientRouter /> only <main> swaps; the sidebar + top chrome persist. So
+// one-time setup (listeners on persistent elements / document / window) runs once,
+// while per-page work re-runs on every `astro:page-load`. Per-page listeners are
+// bound to a fresh AbortController each navigation so they don't accumulate.
+let pageAbort: AbortController | null = null;
+
+function once() {
+  wireControls();   // delegated on document — persists
+  wireAuth();       // AuthBar lives in the persistent sidebar
+  wireNav();        // toggle/backdrop/sidebar persist; keydown on document
+  registerSW();
   document.querySelector('.sidebar')?.addEventListener('scroll', onSidebarScroll, { passive: true });
   window.addEventListener('resize', () => { computeStickyTops(); updateStickyShadows(); });
   window.addEventListener('load', () => { computeStickyTops(); updateStickyShadows(); }); // re-measure after fonts settle
   if (sb) {
-    const session = await getSession();
-    renderAuth(session);
-    await pullRemote();
+    getSession().then((session) => { renderAuth(session); pullRemote(); });
     sb.auth.onAuthStateChange((_evt, session) => { renderAuth(session); pullRemote(); });
     // Back online after offline edits? Re-run the merge: pullRemote() pushes any
     // local-newer rows up (last-write-wins) and pulls remote changes down.
@@ -698,4 +717,26 @@ async function boot() {
     renderAuth(null);
   }
 }
-document.addEventListener('DOMContentLoaded', boot);
+
+function setupPage() {
+  pageAbort?.abort();                 // tear down the previous page's listeners
+  pageAbort = new AbortController();
+  highlightCurrent();
+  applyAll();
+  initReadTracking(pageAbort.signal);
+  initDeck(pageAbort.signal);
+  computeStickyTops();
+  scrollSidebarToCurrent();
+  updateStickyShadows();
+}
+
+let booted = false;
+// astro:page-load fires on the initial load AND after every client-side swap.
+document.addEventListener('astro:page-load', () => {
+  if (!booted) { booted = true; once(); }
+  setupPage();
+});
+// Leaving a section page client-side fires no `pagehide`; flush its progress here.
+document.addEventListener('astro:before-swap', () => {
+  if (trackKey) syncRow(trackKey);
+});

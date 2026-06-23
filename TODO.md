@@ -42,4 +42,6 @@
   - [x] we should make a dice SECTION that just has an outer rounded border, then a die, then page/aux/p3/p8 buttons.
     - (for the sidebar top)
   - [x] gitignore /src/data if that's correct
-  -  
+
+[ ] 6 in the header of a page, add a copy-as-markdown button. I'm thinking "[unicode copy symbol].md" as the button text, with more info on hover
+

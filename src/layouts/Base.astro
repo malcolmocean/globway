@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import { ViewTransitions } from 'astro:transitions';
 import Tree from '../components/Tree.astro';
 import NavBar from '../components/NavBar.astro';
 import AuthBar from '../components/AuthBar.astro';
@@ -43,14 +44,15 @@ const description =
     <meta name="twitter:title" content={pageTitle} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImage} />
+    <ViewTransitions />
   </head>
   <body>
-    <button type="button" class="nav-toggle" data-nav-toggle aria-label="Table of contents">
+    <button type="button" class="nav-toggle" data-nav-toggle aria-label="Table of contents" transition:persist="nav-toggle">
       <span aria-hidden="true">☰</span> Contents
     </button>
-    <div class="nav-backdrop" data-nav-backdrop></div>
+    <div class="nav-backdrop" data-nav-backdrop transition:persist="nav-backdrop"></div>
     <div class="app">
-      <aside class="sidebar">
+      <aside class="sidebar" transition:persist="sidebar">
         <a class="brand" href={base}>
           Global Wayfinding Meditation
           <small>Mark Lippmann's protocol, interactive</small>
@@ -72,15 +74,6 @@ const description =
     </div>
     <script>
       import '../scripts/app.ts';
-    </script>
-    <script is:inline define:vars={{ base }}>
-      // Register the offline service worker (generated at build time by
-      // scripts/build-sw.mjs). Guarded so dev (no sw.js) is a harmless no-op.
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register(base + 'sw.js').catch(() => {});
-        });
-      }
     </script>
   </body>
 </html>
