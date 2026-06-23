@@ -129,6 +129,10 @@ let sections = located
       wordcount: plain.split(/\s+/).filter(Boolean).length,
       aliases: [...aliases],
       html: rewritten,
+      // Raw markdown source, kept for the "copy as markdown" button. Dead nav
+      // links stripped (same as the html); in-text #anchor links rewritten to
+      // absolute URLs in the second pass below so copied md works anywhere.
+      md: stripDeadNavLinks(bodyMd),
     };
   });
 
@@ -174,6 +178,22 @@ function rewriteLinks(html) {
 }
 for (const s of sections) s.html = rewriteLinks(s.html);
 for (const a of auxPractices) a.html = rewriteLinks(a.html);
+
+// Markdown variant of the link rewrite, for the "copy as markdown" payload: emit
+// ABSOLUTE URLs (so pasted md works anywhere), covering both inline-html href="#x"
+// and markdown [text](#x) links. Anchors with no canonical target are left as-is.
+const SITE = (process.env.PUBLIC_SITE_URL || 'https://globway.top').replace(/\/$/, '');
+function absForAnchor(anchor) {
+  if (auxSlugToKey[anchor]) return `${SITE}/aux?p=${auxSlugToKey[anchor]}`;
+  const canon = aliasToCanonical[anchor];
+  return canon ? `${SITE}/s/${canon}` : null;
+}
+function rewriteLinksMd(md) {
+  return md
+    .replace(/href="#([^"]+)"/g, (full, a) => { const u = absForAnchor(a); return u ? `href="${u}"` : full; })
+    .replace(/\]\(#([^)]+)\)/g, (full, a) => { const u = absForAnchor(a); return u ? `](${u})` : full; });
+}
+for (const s of sections) if (s.md) s.md = rewriteLinksMd(s.md);
 
 // ---- 4c. Decks: lists presented one item at a time by the shared presenter.
 // aux = the 959 auxiliary practices; p3/p8 = the prompt lists inside those two
@@ -373,6 +393,7 @@ function curateFrontMatter(sections, aliasMap) {
   }
   into.html = parts.join('\n');
   into.title = TITLE;
+  into.md = ''; // merged from several sources + fork content; no clean md to copy
 
   // Fold absorbed sections' anchors into INTO so deep links / in-text links resolve.
   const removed = new Set();

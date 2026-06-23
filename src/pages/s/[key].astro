@@ -67,6 +67,7 @@ const kids = childrenOf(s.key);
 ---
 <Base title={s.title} current={s.key}>
   <article class="content" data-section-key={s.key} data-wordcount={s.wordcount}>
+    {s.md && <div hidden data-section-md set:text={s.md} />}
     <div class="section-head" data-section-head>
       {crumbs.length > 0 && (
         <div class="crumbs">

@@ -68,9 +68,11 @@ Date: 2026-06-23
 - `build-content.mjs` keeps `bodyMd` per section and produces a copy-ready md with
   `#anchor`/cross-section links rewritten to absolute `https://globway.top/s/<key>`
   (reusing `aliasToCanonical` / `auxSlugToKey`), plus the same dead-nav cleanup.
-- Each section page embeds its md in a hidden `<template data-section-md>` (travels
-  with the page, precached for free). A `⧉.md` button in `SectionControls`/header
-  copies it via the clipboard API, with a hover tooltip.
+- Each section page embeds its md in a hidden `<div data-section-md>` (travels with
+  the page, precached for free). A `⧉.md` button in `SectionControls` copies it via
+  the clipboard API, with a hover tooltip. (NB: a `<template>` hangs `astro build`
+  — Astro special-cases it; and `<script>`'s raw-text content model breaks the
+  `&lt;` round-trip. A hidden `<div set:text>` builds fast and round-trips cleanly.)
 - Colophon (merged front-matter) is the one special section; its md is synthesized
   from its parts or the button is omitted there.
 

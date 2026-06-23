@@ -384,12 +384,38 @@ function wireControls() {
       if (region && key) { toggle(key, 'hidden'); applyPreamble(region); }
       return;
     }
+    // copy the current section as markdown (links already absolute)
+    const cp = target.closest<HTMLElement>('[data-action="copy-md"]');
+    if (cp) { copyMd(cp); return; }
     // random section within the current filter view
     if (target.closest('[data-action="random-view"]')) { randomInView(); return; }
     // × clear an entry from the home "Continue reading" panel
     const clr = target.closest<HTMLElement>('[data-clear-progress][data-key]');
     if (clr) { clearProgress(clr.getAttribute('data-key')!); return; }
   });
+}
+
+// ---- copy section as markdown (TODO #6) ------------------------------------
+// The section's markdown source is embedded in a hidden <template> on the page
+// (links already rewritten to absolute globway URLs at build time). Show the
+// button only when that md exists (the merged colophon has none).
+function sectionMd(): string {
+  return document.querySelector<HTMLElement>('[data-section-md]')?.textContent || '';
+}
+function syncCopyButton() {
+  const has = !!sectionMd().trim();
+  document.querySelectorAll<HTMLElement>('[data-action="copy-md"]').forEach((b) => { b.hidden = !has; });
+}
+let copyTimer = 0;
+async function copyMd(btn: HTMLElement) {
+  const md = sectionMd();
+  if (!md) return;
+  if (!btn.dataset.label) btn.dataset.label = btn.innerHTML;
+  let msg = 'copied ✓';
+  try { await navigator.clipboard.writeText(md); } catch { msg = 'copy failed'; }
+  btn.innerHTML = msg;
+  clearTimeout(copyTimer);
+  copyTimer = window.setTimeout(() => { btn.innerHTML = btn.dataset.label!; }, 1400);
 }
 
 // ---- deck presenter (/aux, /p3, /p8) ---------------------------------------
@@ -755,6 +781,7 @@ function setupPage() {
   pageAbort?.abort();                 // tear down the previous page's listeners
   pageAbort = new AbortController();
   highlightCurrent();
+  syncCopyButton();
   applyAll();
   initReadTracking(pageAbort.signal);
   initDeck(pageAbort.signal);

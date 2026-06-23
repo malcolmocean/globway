@@ -43,5 +43,8 @@
     - (for the sidebar top)
   - [x] gitignore /src/data if that's correct
 
-[ ] 6 in the header of a page, add a copy-as-markdown button. I'm thinking "[unicode copy symbol].md" as the button text, with more info on hover
+[x] 6 in the header of a page, add a copy-as-markdown button. I'm thinking "[unicode copy symbol].md" as the button text, with more info on hover
+  - "⧉.md" button in the section header; copies the section's markdown source with
+    in-text links rewritten to absolute https://globway.top/... URLs. Works offline
+    (md embedded per page). Hidden on the merged colophon (no single-source md).
 

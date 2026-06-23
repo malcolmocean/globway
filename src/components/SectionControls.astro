@@ -12,4 +12,8 @@ const { sectionKey } = Astro.props;
   <button type="button" data-action="hide" data-key={sectionKey} aria-pressed="false" class="hide-btn">
     <span aria-hidden="true">⊘</span> Hide
   </button>
+  <button type="button" data-action="copy-md" class="copy-md-btn" hidden
+    title="Copy this section as Markdown (links rewritten to full globway.top URLs)">
+    <span aria-hidden="true">⧉</span>.md
+  </button>
 </div>

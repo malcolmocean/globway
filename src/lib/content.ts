@@ -11,6 +11,7 @@ export interface Section {
   wordcount: number;
   aliases: string[];
   html: string;
+  md?: string;
   order: number;
   prev: string | null;
   next: string | null;
