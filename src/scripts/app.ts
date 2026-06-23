@@ -348,7 +348,7 @@ async function initDeck() {
     countEl.textContent = `${p.order + 1} / ${items.length}`;
     setNav(prevEl, items[p.order - 1], 'prev');
     setNav(nextEl, items[p.order + 1], 'next');
-    document.title = `${p.title} — Globway`;
+    document.title = `${p.title} ༄ Global Wayfinding Meditation Manual`;
   }
   function go(key: string) {
     history.pushState({}, '', deckHref(key));
