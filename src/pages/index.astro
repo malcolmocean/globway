@@ -1,7 +1,10 @@
 ---
 import Base from '../layouts/Base.astro';
+import { sections, sectionHref } from '../lib/content';
 const base = import.meta.env.BASE_URL;
 const tweet = 'https://twitter.com/Malcolm_Ocean/status/1574463817177878529';
+// First section is the colophon — where a fresh reader starts.
+const startHref = sectionHref(base, sections[0].key);
 ---
 <Base title="Global Wayfinding Meditation Manual" home>
   <div class="home">
@@ -37,5 +40,8 @@ const tweet = 'https://twitter.com/Malcolm_Ocean/status/1574463817177878529';
         <a href="https://meditationbook.page" rel="noopener" target="_blank">the original</a>.
       </footer>
     </blockquote>
+    <!-- Mobile-only jump into the reading. Hidden by app.ts when the in-progress
+         panel above is showing (a returning reader already has a resume point). -->
+    <a class="home-start" href={startHref} data-home-start>Start reading →</a>
   </div>
 </Base>

@@ -176,8 +176,15 @@ function renderInProgress() {
     .filter(([k, e]) => inProgress(e) && meta.has(k))
     .map(([k, e]) => ({ ...meta.get(k)!, progress: e.progress!, starred: !!e.starred, at: e.updated_at || '' }))
     .sort((a, b) => b.at.localeCompare(a.at));
-  if (!items.length) { panel.hidden = true; list.innerHTML = ''; return; }
+  // Mobile "Start reading" button (home only) shows iff there's nothing to resume.
+  const startBtn = document.querySelector<HTMLElement>('[data-home-start]');
+  if (!items.length) {
+    panel.hidden = true; list.innerHTML = '';
+    if (startBtn) startBtn.hidden = false;
+    return;
+  }
   panel.hidden = false;
+  if (startBtn) startBtn.hidden = true;
   list.innerHTML = items.map((it) => {
     const pct = Math.max(1, Math.round(it.progress * 100));
     const title = escapeHtml(it.title);
@@ -623,11 +630,13 @@ function onSidebarScroll() {
 // Mobile: the sidebar is an off-canvas drawer. A hamburger toggles it; tapping the
 // backdrop, a TOC link, or Escape closes it.
 function wireNav() {
-  const body = document.body;
-  const close = () => body.classList.remove('nav-open');
-  const open = () => { body.classList.add('nav-open'); computeStickyTops(); scrollSidebarToCurrent(); updateStickyShadows(); };
+  // Read document.body *live* on each call — the nav-toggle/backdrop persist across
+  // ViewTransitions, but Astro swaps in a fresh <body> on navigation, so a captured
+  // reference would go stale (toggling the old, detached body does nothing).
+  const close = () => document.body.classList.remove('nav-open');
+  const open = () => { document.body.classList.add('nav-open'); computeStickyTops(); scrollSidebarToCurrent(); updateStickyShadows(); };
   document.querySelectorAll<HTMLElement>('[data-nav-toggle]').forEach((b) =>
-    b.addEventListener('click', () => (body.classList.contains('nav-open') ? close() : open())));
+    b.addEventListener('click', () => (document.body.classList.contains('nav-open') ? close() : open())));
   document.querySelectorAll<HTMLElement>('[data-nav-backdrop]').forEach((b) =>
     b.addEventListener('click', close));
   document.querySelector('.sidebar nav[aria-label="Table of contents"]')

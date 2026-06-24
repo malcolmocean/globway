@@ -227,6 +227,19 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .home-quote p { margin: 0 0 .9rem; }
 .home-quote footer { color: var(--muted); font-size: .95rem; }
 .home-quote footer a { color: var(--muted); }
+/* Mobile-only "Start reading" button at the foot of the home hero. Desktop hides
+   it (the sidebar TOC is always visible there); app.ts adds [hidden] when the
+   in-progress panel is showing, so :not([hidden]) re-asserts the mobile display. */
+.home-start { display: none; }
+@media (max-width: 800px) {
+  .home-start:not([hidden]) {
+    display: flex; align-items: center; justify-content: center;
+    margin: 1.6rem 0 .5rem; padding: .85rem 1.2rem; border-radius: 999px;
+    font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 600; font-size: 1rem;
+    text-decoration: none; color: #fff; background: var(--accent);
+    border: 1px solid var(--accent);
+  }
+}
 
 /* section controls */
 .controls { display:flex; gap:.5rem; align-items:center; margin:.25rem 0 1.5rem;
@@ -257,10 +270,14 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .section-head-row .section-h :is(h1, p) { margin: 0; }
 .section-head-row .controls { flex: none; margin: .1rem 0 0; }
 @media (max-width: 800px) {
-  /* Let the controls drop below a long heading; nudge the band clear of the
-     floating ☰ Contents button (fixed top-left). */
+  /* Drop the controls onto their own row below the heading; nudge the band clear
+     of the floating ☰ Contents button (fixed top-left). The heading is forced to
+     full width (flex-basis:100%) — otherwise its `flex:1; min-width:0` lets it
+     shrink to one-character-per-line to keep the controls beside it, instead of
+     wrapping them below. */
   .section-head .crumbs { padding-left: 6.2rem; min-height: 1.4rem; }
   .section-head-row { flex-wrap: wrap; }
+  .section-head-row .section-h { flex-basis: 100%; }
 }
 
 /* article */
