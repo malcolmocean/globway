@@ -8,7 +8,7 @@ const sectionHashes: Record<string, string> = hashData as Record<string, string>
 type Annotation = {
   id: string;
   section_key: string;
-  kind: 'note' | 'highlight';
+  kind: 'note' | 'highlight' | 'para';
   body: string | null;
   quote: string | null;
   prefix: string | null;
@@ -35,6 +35,11 @@ function saveLocal(s: Record<string, Annotation>) {
 
 let annotations: Record<string, Annotation> = loadLocal();
 
+// noteId -> the DOM element an anchored note points at (first <mark> for a
+// highlight, the block element for a paragraph note). Rebuilt every render; the
+// rail reads these to position cards beside their targets.
+const anchorEl: Record<string, HTMLElement> = {};
+
 function resolveKey(key: string): string {
   return aliasToCanonical[key] || key;
 }
@@ -42,14 +47,23 @@ function resolveKey(key: string): string {
 function forSection(key: string): Annotation[] {
   const canon = resolveKey(key);
   return Object.values(annotations)
-    .filter(a => !a.deleted && resolveKey(a.section_key) === canon)
-    .sort((a, b) => {
-      if (a.kind !== b.kind) return a.kind === 'highlight' ? -1 : 1;
-      if (a.kind === 'highlight' && b.kind === 'highlight') {
-        return (a.text_position ?? 0) - (b.text_position ?? 0);
-      }
-      return a.created_at.localeCompare(b.created_at);
-    });
+    .filter(a => !a.deleted && resolveKey(a.section_key) === canon);
+}
+
+// Anchored notes: highlights that carry a comment + paragraph notes. Ordered by
+// position in the text (text_position), so the rail builds top-to-bottom.
+function anchoredFor(key: string): Annotation[] {
+  return forSection(key)
+    .filter(a => (a.kind === 'para' || (a.kind === 'highlight' && a.body !== null)) && !a.orphaned)
+    .sort((a, b) => (a.text_position ?? 0) - (b.text_position ?? 0));
+}
+
+// Page panel contents: unanchored page notes + any orphaned anchored note (so a
+// note whose text vanished is still readable, never lost). Oldest first.
+function pageFor(key: string): Annotation[] {
+  return forSection(key)
+    .filter(a => a.kind === 'note' || a.orphaned)
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
 // ---- plaintext normalization ------------------------------------------------
@@ -240,17 +254,20 @@ function renderHighlights(container: Element, sectionKey: string) {
   const updates: { id: string; changes: Partial<Annotation> }[] = [];
 
   for (const ann of anns) {
+    delete anchorEl[ann.id];
     if (currentHash && ann.section_hash === currentHash && !ann.orphaned) {
       const result = anchorHighlight(ann, container);
       if (result) {
-        wrapRange(result.range, ann);
+        const mark = wrapRange(result.range, ann);
+        if (mark) anchorEl[ann.id] = mark;
         continue;
       }
     }
 
     const result = anchorHighlight(ann, container);
     if (result) {
-      wrapRange(result.range, ann);
+      const mark = wrapRange(result.range, ann);
+      if (mark) anchorEl[ann.id] = mark;
       const changes: Partial<Annotation> = { section_hash: currentHash, orphaned: false };
       if (result.updated) Object.assign(changes, result.updated);
       if (ann.orphaned || ann.section_hash !== currentHash || result.updated) {
@@ -272,8 +289,8 @@ function renderHighlights(container: Element, sectionKey: string) {
   }
 }
 
-function wrapRange(range: Range, ann: Annotation) {
-  const color = ann.color || 'yellow';
+function wrapRange(range: Range, ann: Annotation): HTMLElement | null {
+  let firstMark: HTMLElement | null = null;
   const treeWalker = document.createTreeWalker(
     range.commonAncestorContainer,
     NodeFilter.SHOW_TEXT,
@@ -306,8 +323,9 @@ function wrapRange(range: Range, ann: Annotation) {
 
     const mark = document.createElement('mark');
     mark.dataset.annId = ann.id;
-    mark.className = `hl hl-${color}`;
-    mark.title = ann.body || '';
+    // Single highlight style (no per-color classes); a comment is shown in the
+    // rail card, not as a native tooltip.
+    mark.className = 'hl';
     try {
       nodeRange.surroundContents(mark);
     } catch {
@@ -315,7 +333,132 @@ function wrapRange(range: Range, ann: Annotation) {
       mark.appendChild(fragment);
       nodeRange.insertNode(mark);
     }
+    if (!firstMark) firstMark = mark;
   }
+  return firstMark;
+}
+
+// ---- paragraph notes: block tagging, anchoring, outlines --------------------
+const BLOCK_TAGS = /^(P|H1|H2|H3|H4|H5|H6|BLOCKQUOTE|PRE)$/;
+
+// Tag the eligible blocks (top-level p/hN/blockquote/pre + first-level list
+// items) with a stable-per-render id, so paragraph hover/click can identify the
+// block under the pointer. Anchoring itself is by text (below), not this id.
+function tagBlocks(container: Element) {
+  let i = 0;
+  const tag = (el: Element) => {
+    if (!(el as HTMLElement).dataset.blockId) (el as HTMLElement).dataset.blockId = 'b' + (++i);
+  };
+  Array.from(container.children).forEach(child => {
+    const t = child.tagName;
+    if (t === 'UL' || t === 'OL') Array.from(child.children).forEach(tag);
+    else if (BLOCK_TAGS.test(t)) tag(child);
+  });
+}
+
+function blockOf(node: Node | null, container: Element): HTMLElement | null {
+  let el: HTMLElement | null = node && node.nodeType === Node.TEXT_NODE
+    ? node.parentElement : (node as HTMLElement | null);
+  while (el && el !== container) {
+    if (el.dataset && el.dataset.blockId) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+// The tagged block a paragraph note belongs to. A para quote is a whole block's
+// text, so it can start on the inter-block whitespace (a text node parented by
+// the container, not a block) — hence we check both range ends and, failing
+// that, the block the range intersects.
+function blockForRange(range: Range, container: Element): HTMLElement | null {
+  const direct = blockOf(range.startContainer, container) || blockOf(range.endContainer, container);
+  if (direct) return direct;
+  for (const b of Array.from(container.querySelectorAll<HTMLElement>('[data-block-id]'))) {
+    if (range.intersectsNode(b)) return b;
+  }
+  return null;
+}
+
+// Fast exact-text path: the block whose normalized text equals the stored quote.
+function blockForQuote(container: Element, quote: string | null): HTMLElement | null {
+  if (!quote) return null;
+  for (const b of Array.from(container.querySelectorAll<HTMLElement>('[data-block-id]'))) {
+    if (normalizePlaintext(b.textContent || '') === quote) return b;
+  }
+  return null;
+}
+
+function clearParaOutlines(container: Element) {
+  container.querySelectorAll<HTMLElement>('.para-anchor').forEach(el => {
+    el.classList.remove('para-anchor', 'is-active');
+  });
+}
+
+// Anchor each paragraph note (quote = the block's normalized text) the same
+// robust way highlights anchor, then outline the enclosing block. Reuses the
+// quote/context/position self-healing, so para notes survive Mark's edits.
+function renderParas(container: Element, sectionKey: string) {
+  clearParaOutlines(container);
+  const anns = forSection(sectionKey).filter(a => a.kind === 'para');
+  const currentHash = sectionHashes[resolveKey(sectionKey)];
+  const updates: { id: string; changes: Partial<Annotation> }[] = [];
+
+  for (const ann of anns) {
+    delete anchorEl[ann.id];
+    let block = blockForQuote(container, ann.quote);
+    let result: AnchorResult = null;
+    if (!block) {
+      result = anchorHighlight(ann, container);     // self-healing fuzzy fallback
+      block = result ? blockForRange(result.range, container) : null;
+    }
+    if (block) {
+      block.classList.add('para-anchor');
+      anchorEl[ann.id] = block;
+      const changes: Partial<Annotation> = { section_hash: currentHash, orphaned: false };
+      if (result && result.updated) Object.assign(changes, result.updated);
+      if (ann.orphaned || ann.section_hash !== currentHash || (result && result.updated)) {
+        updates.push({ id: ann.id, changes });
+      }
+    } else if (!ann.orphaned) {
+      updates.push({ id: ann.id, changes: { orphaned: true } });
+    }
+  }
+
+  for (const { id, changes } of updates) {
+    const a = annotations[id];
+    if (!a) continue;
+    Object.assign(a, changes, { updated_at: new Date().toISOString() });
+    saveLocal(annotations);
+    syncAnnotation(a);
+  }
+}
+
+// Whole-block selector context, mirroring getSelectionContext but for a tagged
+// block element — used when creating a paragraph note from the ¶ button.
+function getBlockContext(container: Element, block: Element): {
+  quote: string; prefix: string; suffix: string; text_position: number;
+} | null {
+  const quote = normalizePlaintext(block.textContent || '');
+  if (!quote) return null;
+  const plain = extractPlaintext(container);
+  const idx = plain.indexOf(quote);
+  if (idx < 0) return null;
+  const prefix = plain.slice(Math.max(0, idx - 32), idx);
+  const suffix = plain.slice(idx + quote.length, Math.min(plain.length, idx + quote.length + 32));
+  return { quote, prefix, suffix, text_position: idx };
+}
+
+// ---- minimal markdown (bold/italic/code/link), HTML-escaped first -----------
+function md(src: string | null): string {
+  let s = src == null ? '' : String(src);
+  s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  s = s.replace(/`([^`]+)`/g, (_m, c) => `<code>${c}</code>`);
+  s = s.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
+    (_m, t, u) => `<a href="${u}" target="_blank" rel="noopener">${t}</a>`);
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, (_m, p, c) => `${p}<em>${c}</em>`);
+  s = s.replace(/\n/g, '<br>');
+  return s;
 }
 
 // ---- selection capture ------------------------------------------------------
@@ -435,9 +578,8 @@ async function pullAnnotations() {
 // Re-render the section currently on screen, if any. No-op before a section page
 // has initialised (currentSectionKey is null on the home page / decks).
 function renderCurrentSection() {
-  if (!currentContainer || !currentSectionKey || !notesPanel) return;
-  renderHighlights(currentContainer, currentSectionKey);
-  renderNotesPanel(currentSectionKey);
+  if (!currentContainer || !currentSectionKey || !railEl) return;
+  refresh();
 }
 
 // ---- CRUD -------------------------------------------------------------------
@@ -447,7 +589,7 @@ function generateId(): string {
 
 function createAnnotation(fields: {
   section_key: string;
-  kind: 'note' | 'highlight';
+  kind: 'note' | 'highlight' | 'para';
   body?: string | null;
   quote?: string | null;
   prefix?: string | null;
@@ -497,304 +639,657 @@ function deleteAnnotation(id: string) {
   syncAnnotation(ann);
 }
 
-// ---- UI: selection popover --------------------------------------------------
-let popover: HTMLElement | null = null;
-let currentContainer: Element | null = null;
+// ===========================================================================
+// UI — anchored side rail
+//
+// The article body is React-/framework-free static HTML we own imperatively.
+// Highlights live as <mark>s inside it; paragraph notes outline their block.
+// The rail (right column on desktop) holds a fixed page-notes panel plus
+// position-tracking cards that align to each anchored note's target, collapsing
+// to preview pills and summarising off-screen notes with ↑/↓ counters. On
+// narrow screens the rail stacks under the body and an activated note expands
+// inline beneath its target. Ported from the Claude-design mockup.
+// ===========================================================================
+
+let currentContainer: Element | null = null;   // = bodyEl, the annotatable article
 let currentSectionKey: string | null = null;
 let currentTitleSnapshot: string | null = null;
 
-function removePopover() {
-  popover?.remove();
-  popover = null;
-}
+let bodyEl: HTMLElement | null = null;
+let rowEl: HTMLElement | null = null;          // .annot-row (positioning context)
+let railEl: HTMLElement | null = null;
+let pagePanelEl: HTMLElement | null = null;
+let pageListEl: HTMLElement | null = null;
+let aboveEl: HTMLElement | null = null;
+let belowEl: HTMLElement | null = null;
 
-function showSelectionPopover(x: number, y: number, context: ReturnType<typeof getSelectionContext>) {
-  if (!context) return;
-  removePopover();
+const cardRefs: Record<string, HTMLElement> = {};  // noteId -> rail card / wrapper
 
-  popover = document.createElement('div');
-  popover.className = 'ann-popover';
-  popover.innerHTML =
-    `<button type="button" class="ann-pop-btn" data-pop-action="highlight" data-color="yellow" title="Highlight">` +
-      `<span class="ann-pop-swatch hl-yellow"></span></button>` +
-    `<button type="button" class="ann-pop-btn" data-pop-action="highlight" data-color="green" title="Highlight green">` +
-      `<span class="ann-pop-swatch hl-green"></span></button>` +
-    `<button type="button" class="ann-pop-btn" data-pop-action="highlight" data-color="blue" title="Highlight blue">` +
-      `<span class="ann-pop-swatch hl-blue"></span></button>` +
-    `<button type="button" class="ann-pop-btn" data-pop-action="highlight" data-color="pink" title="Highlight pink">` +
-      `<span class="ann-pop-swatch hl-pink"></span></button>` +
-    `<button type="button" class="ann-pop-btn ann-pop-note" data-pop-action="highlight-note" title="Highlight + note">` +
-      `<span aria-hidden="true">📝</span></button>`;
+let activeId: string | null = null;
+let editingId: string | null = null;
+let isNew = false;            // editing a just-created note → Cancel discards it
+let pageCollapsed = false;
+let narrow = false;
 
-  popover.style.left = `${x}px`;
-  popover.style.top = `${y}px`;
-  document.body.appendChild(popover);
+let popupEl: HTMLElement | null = null;        // selection popup (Note / Highlight)
+let markMenuEl: HTMLElement | null = null;     // bare-mark menu (Note / Remove)
+let paraFabEl: HTMLElement | null = null;      // ¶ block-hover button
+let paraFabBlock: HTMLElement | null = null;
 
-  const rect = popover.getBoundingClientRect();
-  if (rect.right > window.innerWidth - 8) {
-    popover.style.left = `${window.innerWidth - rect.width - 8}px`;
-  }
-  if (rect.top < 0) {
-    popover.style.top = `${y + 24}px`;
-  }
-
-  popover.addEventListener('mousedown', e => e.preventDefault());
-  popover.addEventListener('click', e => {
-    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-pop-action]');
-    if (!btn || !currentContainer || !currentSectionKey) return;
-    const action = btn.dataset.popAction;
-    const color = btn.dataset.color || 'yellow';
-
-    if (action === 'highlight') {
-      createAnnotation({
-        section_key: currentSectionKey,
-        kind: 'highlight',
-        quote: context.quote,
-        prefix: context.prefix,
-        suffix: context.suffix,
-        text_position: context.text_position,
-        color,
-        title_snapshot: currentTitleSnapshot,
-      });
-      window.getSelection()?.removeAllRanges();
-      removePopover();
-      renderHighlights(currentContainer, currentSectionKey);
-      renderNotesPanel(currentSectionKey);
-    } else if (action === 'highlight-note') {
-      const ann = createAnnotation({
-        section_key: currentSectionKey,
-        kind: 'highlight',
-        quote: context.quote,
-        prefix: context.prefix,
-        suffix: context.suffix,
-        text_position: context.text_position,
-        color: 'yellow',
-        title_snapshot: currentTitleSnapshot,
-      });
-      window.getSelection()?.removeAllRanges();
-      removePopover();
-      renderHighlights(currentContainer, currentSectionKey);
-      renderNotesPanel(currentSectionKey);
-      openNoteEditor(ann.id);
-    }
-  });
-}
-
-function onSelectionChange() {
-  if (!currentContainer) return;
-  const sel = window.getSelection();
-  if (!sel || sel.isCollapsed || !sel.rangeCount) {
-    removePopover();
-    return;
-  }
-  const range = sel.getRangeAt(0);
-  if (!currentContainer.contains(range.commonAncestorContainer)) {
-    removePopover();
-    return;
-  }
-  const context = getSelectionContext(currentContainer);
-  if (!context) { removePopover(); return; }
-
-  const rect = range.getBoundingClientRect();
-  const x = rect.left + window.scrollX + rect.width / 2 - 70;
-  const y = rect.top + window.scrollY - 44;
-  showSelectionPopover(x, y, context);
-}
-
-// ---- UI: notes panel --------------------------------------------------------
-let notesPanel: HTMLElement | null = null;
+let pendingScroll: string | null = null;
+let pendingFocus: string | null = null;
+let scrollRaf = 0;
+let mq: MediaQueryList | null = null;
+let hideFabTimer: ReturnType<typeof setTimeout> | null = null;
 
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
 
-function renderNotesPanel(sectionKey: string) {
-  if (!notesPanel) return;
-  const anns = forSection(sectionKey);
-  const list = notesPanel.querySelector<HTMLElement>('.ann-list');
-  if (!list) return;
+// ---- text helpers -----------------------------------------------------------
+function previewText(n: Annotation): string {
+  const first = (n.body || '').split('\n')[0].replace(/[*`#>[\]]/g, '').trim();
+  return first || (n.kind === 'para' ? 'Add a note on this paragraph…' : 'Add a note…');
+}
+function anchorLabel(n: Annotation): string {
+  const q = (n.quote || '').replace(/\s+/g, ' ').trim();
+  const short = q.length > 90 ? q.slice(0, 90) + '…' : q;
+  return n.kind === 'para' ? '¶ ' + short : '“' + short + '”';
+}
 
-  const count = notesPanel.querySelector<HTMLElement>('.ann-count');
-  if (count) count.textContent = anns.length ? `${anns.length}` : '';
+// ---- render: rail contents --------------------------------------------------
+function refresh() {
+  if (!currentContainer || !currentSectionKey || !railEl) return;
+  renderHighlights(currentContainer, currentSectionKey);
+  renderParas(currentContainer, currentSectionKey);
+  renderRail();
+  applyActiveStates();
+  layout();
+  if (pendingFocus) { const id = pendingFocus; pendingFocus = null; focusEditor(id); }
+  if (pendingScroll) {
+    const id = pendingScroll; pendingScroll = null;
+    requestAnimationFrame(() => ensureVisible(id));
+  }
+}
 
-  if (!anns.length) {
-    list.innerHTML = '<p class="ann-empty">No notes yet. Select text to highlight, or add a page note below.</p>';
+function buildCard(n: Annotation): HTMLElement {
+  const card = document.createElement('div');
+  const anchored = (n.kind === 'para' || (n.kind === 'highlight' && n.body !== null)) && !n.orphaned;
+  const active = activeId === n.id;
+  const editing = editingId === n.id;
+  card.className = 'ann-card'
+    + (n.kind === 'para' ? ' is-para' : n.kind === 'highlight' ? ' is-hl' : ' is-page')
+    + (anchored && active ? ' is-active' : '')
+    + (editing ? ' is-editing' : '');
+  card.dataset.cardId = n.id;
+
+  const label = anchored ? `<div class="ann-anchor-label">${escapeHtml(anchorLabel(n))}</div>` : '';
+
+  if (editing) {
+    card.innerHTML = label
+      + `<textarea class="ann-textarea" data-editor="${n.id}" placeholder="Write a note… Markdown supported">${escapeHtml(n.body || '')}</textarea>`
+      + `<div class="ann-md-hint">**bold** · *italic* · \`code\` · [link](url) — ⌘/Ctrl+Enter to save · Esc to cancel</div>`
+      + `<div class="ann-editor-actions"><button type="button" class="ann-save" data-save="${n.id}">Save</button>`
+      + `<button type="button" class="ann-cancel" data-cancel="${n.id}">Cancel</button></div>`;
+    return card;
+  }
+
+  const orphan = n.orphaned
+    ? `<div class="ann-detached">detached${n.quote ? ` · “${escapeHtml(n.quote.length > 80 ? n.quote.slice(0, 80) + '…' : n.quote)}”` : ''}</div>`
+    : '';
+  const tools = `<div class="ann-card-tools">`
+    + `<button type="button" class="ann-icon-btn" data-edit="${n.id}" title="Edit">✎</button>`
+    + `<button type="button" class="ann-icon-btn ann-del" data-delete="${n.id}" title="Delete">×</button></div>`;
+  card.innerHTML = label + orphan
+    + `<div class="ann-card-row"><div class="ann-md">${md(n.body)}</div>${tools}</div>`;
+  return card;
+}
+
+function buildPill(n: Annotation): HTMLElement {
+  const pill = document.createElement('div');
+  pill.className = 'ann-pill' + (n.kind === 'para' ? ' is-para' : ' is-hl');
+  pill.dataset.activate = n.id;
+  const glyph = n.kind === 'para' ? '¶' : '';
+  pill.innerHTML = `<span class="ann-pill-dot">${glyph}</span>`
+    + `<span class="ann-pill-text">${escapeHtml(previewText(n))}</span>`;
+  return pill;
+}
+
+function renderRail() {
+  if (!railEl || !currentSectionKey) return;
+  railEl.innerHTML = '';
+  for (const k in cardRefs) delete cardRefs[k];
+
+  // fixed page-notes panel
+  const pageNotes = pageFor(currentSectionKey);
+  const panel = document.createElement('div');
+  panel.className = 'ann-page-panel' + (pageCollapsed ? '' : ' is-open');
+  panel.innerHTML =
+    `<div class="ann-page-head" data-toggle-page>`
+    + `<span class="ann-page-title"><span class="ann-chevron">▸</span> PAGE NOTES${pageNotes.length ? ` · ${pageNotes.length}` : ''}</span>`
+    + `<button type="button" class="ann-icon-btn" data-add-page title="Add page note">+</button></div>`
+    + `<div class="ann-page-list"></div>`;
+  railEl.appendChild(panel);
+  pagePanelEl = panel;
+  pageListEl = panel.querySelector('.ann-page-list');
+  if (pageListEl) {
+    if (pageNotes.length) {
+      pageNotes.forEach(n => { const c = buildCard(n); cardRefs[n.id] = c; pageListEl!.appendChild(c); });
+    } else {
+      const e = document.createElement('p');
+      e.className = 'ann-empty';
+      e.textContent = 'No page notes yet.';
+      pageListEl.appendChild(e);
+    }
+  }
+
+  // off-screen counters
+  aboveEl = document.createElement('div');
+  aboveEl.className = 'ann-offscreen';
+  aboveEl.textContent = '↑';
+  aboveEl.style.display = 'none';
+  aboveEl.addEventListener('click', jumpUp);
+  railEl.appendChild(aboveEl);
+  belowEl = document.createElement('div');
+  belowEl.className = 'ann-offscreen';
+  belowEl.textContent = '↓';
+  belowEl.style.display = 'none';
+  belowEl.addEventListener('click', jumpDown);
+  railEl.appendChild(belowEl);
+
+  // anchored cards (only those that resolved to a target this render)
+  anchoredFor(currentSectionKey).forEach(n => {
+    if (!anchorEl[n.id]) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'ann-anchored';
+    wrap.style.display = 'none';
+    const expanded = activeId === n.id || editingId === n.id;
+    wrap.appendChild(expanded ? buildCard(n) : buildPill(n));
+    cardRefs[n.id] = wrap;
+    railEl!.appendChild(wrap);
+  });
+}
+
+function applyActiveStates() {
+  if (!currentContainer) return;
+  currentContainer.querySelectorAll<HTMLElement>('mark[data-ann-id]').forEach(m => {
+    m.classList.toggle('is-active', m.dataset.annId === activeId);
+  });
+  const activeBlock = activeId ? anchorEl[activeId] : null;
+  currentContainer.querySelectorAll<HTMLElement>('.para-anchor').forEach(b => {
+    b.classList.toggle('is-active', b === activeBlock);
+  });
+}
+
+function focusEditor(id: string) {
+  const ta = railEl?.querySelector<HTMLTextAreaElement>(`[data-editor="${id}"]`);
+  if (!ta) return;
+  ta.focus();
+  try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch {}
+  ta.addEventListener('keydown', (e: KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); saveNote(id); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancelNote(id); }
+  });
+  if (!narrow && pageListEl && pageListEl.contains(ta)) {
+    const card = cardRefs[id];
+    if (card && pageListEl.contains(card)) pageListEl.scrollTop = Math.max(0, card.offsetTop - 6);
+  }
+}
+
+// ---- layout: position cards beside their targets ----------------------------
+function headerBottom(): number {
+  const sh = currentContainer?.closest('.content')?.querySelector('.section-head');
+  const b = sh ? sh.getBoundingClientRect().bottom : 0;
+  return Math.max(b + 12, 24);
+}
+
+function layout() {
+  if (!railEl || !bodyEl) return;
+  if (narrow) layoutNarrow(); else layoutWide();
+}
+
+function layoutWide() {
+  if (!railEl || !bodyEl || !currentSectionKey) return;
+  const rb = railEl.getBoundingClientRect();
+  if (pagePanelEl) {
+    pagePanelEl.style.position = 'fixed';
+    pagePanelEl.style.left = rb.left + 'px';
+    pagePanelEl.style.width = rb.width + 'px';
+    pagePanelEl.style.top = headerBottom() + 'px';
+    pagePanelEl.style.zIndex = '23';
+    if (pageListEl) {
+      const editingPage = editingId != null && pageFor(currentSectionKey).some(n => n.id === editingId);
+      pageListEl.style.display = pageCollapsed ? 'none' : 'block';
+      pageListEl.style.maxHeight = editingPage ? 'min(62vh, 520px)' : '32vh';
+    }
+  }
+  const bodyTop = bodyEl.getBoundingClientRect().top;
+  const items = anchoredFor(currentSectionKey)
+    .filter(n => anchorEl[n.id] && cardRefs[n.id])
+    .map(n => ({ n, offset: anchorEl[n.id].getBoundingClientRect().top - bodyTop }))
+    .sort((a, b) => a.offset - b.offset);
+  let cursor = 0;
+  for (const { n, offset } of items) {
+    const el = cardRefs[n.id];
+    el.style.display = 'block';
+    el.style.position = 'absolute';
+    el.style.left = '0';
+    el.style.right = '0';
+    el.style.zIndex = activeId === n.id ? '12' : '6';
+    const top = Math.max(offset, cursor);
+    el.style.top = top + 'px';
+    cursor = top + el.offsetHeight + 8;
+  }
+  railEl.style.minHeight = Math.max(bodyEl.offsetHeight, cursor) + 'px';
+  updateOffscreen();
+}
+
+function layoutNarrow() {
+  if (!railEl || !bodyEl || !currentSectionKey) return;
+  if (pagePanelEl) {
+    pagePanelEl.style.position = '';
+    pagePanelEl.style.left = '';
+    pagePanelEl.style.width = '';
+    pagePanelEl.style.top = '';
+    pagePanelEl.style.zIndex = '';
+  }
+  if (pageListEl) {
+    pageListEl.style.display = pageCollapsed ? 'none' : 'block';
+    pageListEl.style.maxHeight = '';
+  }
+  if (aboveEl) aboveEl.style.display = 'none';
+  if (belowEl) belowEl.style.display = 'none';
+  railEl.style.minHeight = '';
+  const mr = rowEl ? rowEl.getBoundingClientRect() : null;
+  const ar = bodyEl.getBoundingClientRect();
+  anchoredFor(currentSectionKey).forEach(n => {
+    const el = cardRefs[n.id];
+    if (!el) return;
+    const target = anchorEl[n.id];
+    if (n.id === activeId && target && mr) {
+      const tr = target.getBoundingClientRect();
+      el.style.display = 'block';
+      el.style.position = 'absolute';
+      el.style.top = (tr.bottom - mr.top + 8) + 'px';
+      el.style.left = (ar.left - mr.left) + 'px';
+      el.style.right = 'auto';
+      el.style.width = ar.width + 'px';
+      el.style.zIndex = '30';
+    } else {
+      el.style.display = 'none';
+    }
+  });
+}
+
+function ensureVisible(id: string) {
+  const el = cardRefs[id];
+  if (!el || el.style.display === 'none') return;
+  const topGuard = narrow ? 78 : (pagePanelEl ? pagePanelEl.getBoundingClientRect().bottom + 12 : headerBottom());
+  const vh = window.innerHeight;
+  const r = el.getBoundingClientRect();
+  let delta = 0;
+  if (r.top < topGuard) delta = r.top - topGuard;
+  else if (r.bottom > vh - 12) delta = Math.min(r.top - topGuard, r.bottom - (vh - 12));
+  if (Math.abs(delta) > 1) window.scrollBy({ top: delta, behavior: 'smooth' });
+}
+
+function offscreenSets() {
+  const panelBottom = pagePanelEl ? pagePanelEl.getBoundingClientRect().bottom : headerBottom();
+  const vh = window.innerHeight;
+  const above: HTMLElement[] = [], below: HTMLElement[] = [];
+  if (currentSectionKey) anchoredFor(currentSectionKey).forEach(n => {
+    const el = cardRefs[n.id];
+    if (!el || el.style.display === 'none') return;
+    const r = el.getBoundingClientRect();
+    if (r.bottom <= panelBottom + 2) above.push(el);
+    else if (r.top >= vh - 4) below.push(el);
+  });
+  return { above, below, panelBottom, vh };
+}
+
+function updateOffscreen() {
+  if (narrow || !railEl || !aboveEl || !belowEl) return;
+  const rb = railEl.getBoundingClientRect();
+  const { above, below, panelBottom, vh } = offscreenSets();
+  const cx = rb.left + rb.width / 2;
+  if (above.length) {
+    aboveEl.style.display = 'flex';
+    aboveEl.title = above.length + ' note' + (above.length > 1 ? 's' : '') + ' above';
+    aboveEl.style.left = cx + 'px';
+    aboveEl.style.top = (panelBottom + 12) + 'px';
+  } else aboveEl.style.display = 'none';
+  if (below.length) {
+    belowEl.style.display = 'flex';
+    belowEl.title = below.length + ' note' + (below.length > 1 ? 's' : '') + ' below';
+    belowEl.style.left = cx + 'px';
+    belowEl.style.top = (vh - 46) + 'px';
+  } else belowEl.style.display = 'none';
+}
+
+function jumpUp() {
+  const { above, panelBottom } = offscreenSets();
+  if (!above.length) return;
+  const el = above[above.length - 1];
+  window.scrollBy({ top: el.getBoundingClientRect().top - (panelBottom + 16), behavior: 'smooth' });
+}
+function jumpDown() {
+  const { below, panelBottom } = offscreenSets();
+  if (!below.length) return;
+  window.scrollBy({ top: below[0].getBoundingClientRect().top - (panelBottom + 16), behavior: 'smooth' });
+}
+
+// ---- note state transitions -------------------------------------------------
+function setActive(id: string | null) {
+  if (editingId && editingId !== id) editingId = null;
+  activeId = id;
+  refresh();
+}
+function openEdit(id: string) {
+  editingId = id;
+  activeId = id;
+  isNew = false;
+  pendingFocus = id;
+  refresh();
+}
+function saveNote(id: string) {
+  const ta = railEl?.querySelector<HTMLTextAreaElement>(`[data-editor="${id}"]`);
+  const val = ta ? ta.value : '';
+  const ann = annotations[id];
+  editingId = null;
+  isNew = false;
+  if (!val.trim()) {
+    // Emptied a comment: a highlight reverts to a bare highlight; a page/para
+    // note with no text is pointless, so it's removed.
+    if (ann && ann.kind === 'highlight') updateAnnotation(id, { body: null });
+    else { removeNote(id); return; }
+  } else {
+    updateAnnotation(id, { body: val });
+  }
+  refresh();
+}
+function cancelNote(id: string) {
+  const ann = annotations[id];
+  if (isNew) { isNew = false; removeNote(id); return; }
+  // A highlight that was given a (still-empty) comment via the mark menu falls
+  // back to a bare highlight on cancel rather than lingering as an empty card.
+  if (ann && ann.kind === 'highlight' && (ann.body === '' || (ann.body && !ann.body.trim()))) {
+    updateAnnotation(id, { body: null });
+  }
+  editingId = null;
+  isNew = false;
+  refresh();
+}
+function removeNote(id: string) {
+  if (currentContainer) {
+    currentContainer.querySelectorAll(`mark[data-ann-id="${id}"]`).forEach(el => {
+      const p = el.parentNode;
+      if (!p) return;
+      while (el.firstChild) p.insertBefore(el.firstChild, el);
+      p.removeChild(el);
+      p.normalize?.();
+    });
+  }
+  delete anchorEl[id];
+  delete cardRefs[id];
+  if (activeId === id) activeId = null;
+  if (editingId === id) editingId = null;
+  removeMarkMenu();
+  deleteAnnotation(id);
+  refresh();
+}
+function addPageNote() {
+  if (!currentSectionKey) return;
+  const ann = createAnnotation({ section_key: currentSectionKey, kind: 'note', body: '', title_snapshot: currentTitleSnapshot });
+  isNew = true;
+  pendingFocus = ann.id;
+  activeId = ann.id;
+  editingId = ann.id;
+  pageCollapsed = false;
+  refresh();
+}
+
+// ---- rail click delegation --------------------------------------------------
+function onRailClick(e: MouseEvent) {
+  const t = e.target as HTMLElement;
+  const act = t.closest<HTMLElement>('[data-activate]');
+  if (act) { pendingScroll = act.dataset.activate!; setActive(act.dataset.activate!); return; }
+  const ed = t.closest<HTMLElement>('[data-edit]');
+  if (ed) { e.stopPropagation(); openEdit(ed.dataset.edit!); return; }
+  const del = t.closest<HTMLElement>('[data-delete]');
+  if (del) { e.stopPropagation(); removeNote(del.dataset.delete!); return; }
+  const sv = t.closest<HTMLElement>('[data-save]');
+  if (sv) { saveNote(sv.dataset.save!); return; }
+  const cn = t.closest<HTMLElement>('[data-cancel]');
+  if (cn) { cancelNote(cn.dataset.cancel!); return; }
+  if (t.closest('[data-add-page]')) { e.stopPropagation(); addPageNote(); return; }
+  if (t.closest('[data-toggle-page]')) {
+    pageCollapsed = !pageCollapsed;
+    renderRail(); applyActiveStates(); layout();
     return;
   }
-
-  list.innerHTML = anns.map(a => {
-    const isHighlight = a.kind === 'highlight';
-    const orphanClass = a.orphaned ? ' ann-orphan' : '';
-    const colorClass = a.color ? ` hl-${a.color}` : '';
-    const quote = a.quote ? `<div class="ann-quote${colorClass}">"${escapeHtml(a.quote.length > 120 ? a.quote.slice(0, 117) + '…' : a.quote)}"</div>` : '';
-    const body = a.body ? `<div class="ann-body">${escapeHtml(a.body)}</div>` : '';
-    const orphanLabel = a.orphaned ? '<span class="ann-orphan-label">detached</span>' : '';
-    const kindIcon = isHighlight ? '' : '<span class="ann-kind-icon" aria-hidden="true">📄</span> ';
-
-    return `<div class="ann-item${orphanClass}" data-ann-item="${a.id}">` +
-      `<div class="ann-item-head">` +
-        `${kindIcon}${orphanLabel}` +
-        `<button type="button" class="ann-edit-btn" data-ann-edit="${a.id}" title="Edit">✏️</button>` +
-        `<button type="button" class="ann-del-btn" data-ann-delete="${a.id}" title="Delete">×</button>` +
-      `</div>` +
-      quote + body +
-    `</div>`;
-  }).join('');
 }
 
-function openNoteEditor(annId: string) {
-  const ann = annotations[annId];
-  if (!ann || ann.deleted) return;
+// ---- selection → highlight / note popup -------------------------------------
+function removePopup() { popupEl?.remove(); popupEl = null; }
 
-  const item = document.querySelector<HTMLElement>(`[data-ann-item="${annId}"]`);
-  if (!item) return;
-
-  const existing = item.querySelector('.ann-editor');
-  if (existing) { (existing.querySelector('textarea') as HTMLTextAreaElement)?.focus(); return; }
-
-  const editor = document.createElement('div');
-  editor.className = 'ann-editor';
-  const textarea = document.createElement('textarea');
-  textarea.className = 'ann-textarea';
-  textarea.value = ann.body || '';
-  textarea.placeholder = 'Add a note…';
-  textarea.rows = 3;
-
-  const actions = document.createElement('div');
-  actions.className = 'ann-editor-actions';
-  actions.innerHTML =
-    `<button type="button" class="ann-save-btn" data-ann-save="${annId}">Save</button>` +
-    `<button type="button" class="ann-cancel-btn" data-ann-cancel="${annId}">Cancel</button>`;
-
-  editor.appendChild(textarea);
-  editor.appendChild(actions);
-  item.appendChild(editor);
-  textarea.focus();
+function onSelectionChange() {
+  if (!bodyEl) return;
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount || !sel.toString().trim()) { removePopup(); return; }
+  const range = sel.getRangeAt(0);
+  if (!bodyEl.contains(range.commonAncestorContainer)) { removePopup(); return; }
+  showSelectionPopup(range.getBoundingClientRect());
 }
 
-// ---- UI: mark click handler -------------------------------------------------
-function onMarkClick(e: MouseEvent) {
-  const mark = (e.target as HTMLElement).closest<HTMLElement>('mark[data-ann-id]');
-  if (!mark) return;
-  const id = mark.dataset.annId!;
-  const ann = annotations[id];
-  if (!ann) return;
+function showSelectionPopup(rect: DOMRect) {
+  removePopup();
+  popupEl = document.createElement('div');
+  popupEl.className = 'ann-popup';
+  popupEl.innerHTML =
+    `<button type="button" data-pop="note">✎ Note</button>`
+    + `<span class="ann-popup-sep"></span>`
+    + `<button type="button" data-pop="hl">Highlight</button>`;
+  document.body.appendChild(popupEl);
+  popupEl.style.left = (rect.left + rect.width / 2) + 'px';
+  popupEl.style.top = (rect.top - 8) + 'px';
+  const pr = popupEl.getBoundingClientRect();
+  if (pr.left < 6) popupEl.style.left = (6 + pr.width / 2) + 'px';
+  if (pr.right > window.innerWidth - 6) popupEl.style.left = (window.innerWidth - 6 - pr.width / 2) + 'px';
+  if (pr.top < 6) popupEl.style.top = (rect.bottom + 8 + pr.height) + 'px';
+  popupEl.addEventListener('mousedown', e => e.preventDefault());
+  popupEl.addEventListener('click', e => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-pop]');
+    if (b) addHighlight(b.dataset.pop === 'note');
+  });
+}
 
-  if (notesPanel) {
-    const panel = notesPanel.closest<HTMLElement>('.ann-panel');
-    if (panel) panel.open = true;
+function addHighlight(withComment: boolean) {
+  if (!bodyEl || !currentSectionKey) return;
+  const ctx = getSelectionContext(bodyEl);
+  if (!ctx) { removePopup(); return; }
+  const ann = createAnnotation({
+    section_key: currentSectionKey,
+    kind: 'highlight',
+    quote: ctx.quote, prefix: ctx.prefix, suffix: ctx.suffix, text_position: ctx.text_position,
+    body: withComment ? '' : null,
+    title_snapshot: currentTitleSnapshot,
+  });
+  window.getSelection()?.removeAllRanges();
+  removePopup();
+  if (withComment) { isNew = true; pendingFocus = ann.id; activeId = ann.id; editingId = ann.id; }
+  refresh();
+}
+
+// ---- clicks inside the article body -----------------------------------------
+function onBodyClick(e: MouseEvent) {
+  const t = e.target as HTMLElement;
+  const mark = t.closest<HTMLElement>('mark[data-ann-id]');
+  if (mark) { e.stopPropagation(); onMarkClick(mark.dataset.annId!, mark); return; }
+  const block = t.closest<HTMLElement>('[data-block-id]');
+  if (!block) { hideFab(); return; }
+  if (currentSectionKey) {
+    const para = forSection(currentSectionKey).find(n => n.kind === 'para' && anchorEl[n.id] === block);
+    if (para) { pendingScroll = para.id; setActive(para.id); return; }
   }
+  if (narrow) showFabFor(block);
+}
 
-  openNoteEditor(id);
+function onMarkClick(id: string, el: HTMLElement) {
+  const n = annotations[id];
+  if (!n) return;
+  if (n.body === null) { showMarkMenu(id, el); }      // bare highlight → menu
+  else { pendingScroll = id; setActive(id); }          // commented → open its card
+}
 
-  const item = document.querySelector<HTMLElement>(`[data-ann-item="${id}"]`);
-  item?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+// ---- bare-mark menu (Note / Remove) -----------------------------------------
+function removeMarkMenu() { markMenuEl?.remove(); markMenuEl = null; }
+
+function showMarkMenu(id: string, el: HTMLElement) {
+  removeMarkMenu();
+  markMenuEl = document.createElement('div');
+  markMenuEl.className = 'ann-mark-menu';
+  markMenuEl.innerHTML =
+    `<button type="button" data-mm="note">✎ Note</button>`
+    + `<button type="button" data-mm="remove" class="ann-mm-remove">✕ Remove</button>`;
+  document.body.appendChild(markMenuEl);
+  const r = el.getBoundingClientRect();
+  markMenuEl.style.left = (r.left + r.width / 2) + 'px';
+  markMenuEl.style.top = (r.top - 8) + 'px';
+  markMenuEl.addEventListener('mousedown', e => e.preventDefault());
+  markMenuEl.addEventListener('click', e => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-mm]');
+    if (!b) return;
+    if (b.dataset.mm === 'note') { updateAnnotation(id, { body: '' }); removeMarkMenu(); openEdit(id); }
+    else removeNote(id);
+  });
+}
+
+// ---- paragraph hover/tap ¶ button -------------------------------------------
+function onBodyMove(e: MouseEvent) {
+  if (narrow) return;
+  const block = (e.target as HTMLElement).closest<HTMLElement>('[data-block-id]');
+  if (!block) return;
+  if (hideFabTimer) { clearTimeout(hideFabTimer); hideFabTimer = null; }
+  if (block === paraFabBlock && paraFabEl && paraFabEl.style.display !== 'none') return;
+  showFabFor(block);
+}
+function onBodyLeave() { scheduleHideFab(); }
+function scheduleHideFab() {
+  if (hideFabTimer) clearTimeout(hideFabTimer);
+  hideFabTimer = setTimeout(hideFab, 220);
+}
+function hideFab() {
+  if (hideFabTimer) { clearTimeout(hideFabTimer); hideFabTimer = null; }
+  paraFabBlock = null;
+  if (paraFabEl) paraFabEl.style.display = 'none';
+}
+function showFabFor(block: HTMLElement) {
+  if (!paraFabEl) {
+    paraFabEl = document.createElement('div');
+    paraFabEl.className = 'ann-para-fab';
+    paraFabEl.innerHTML = `<button type="button" title="Add a note on this block">¶</button>`;
+    document.body.appendChild(paraFabEl);
+    paraFabEl.addEventListener('mouseenter', () => { if (hideFabTimer) { clearTimeout(hideFabTimer); hideFabTimer = null; } });
+    paraFabEl.addEventListener('mouseleave', scheduleHideFab);
+    paraFabEl.querySelector('button')!.addEventListener('mousedown', e => {
+      e.preventDefault();
+      if (paraFabBlock) addParaNote(paraFabBlock);
+    });
+  }
+  paraFabBlock = block;
+  const r = block.getBoundingClientRect();
+  paraFabEl.style.display = 'flex';
+  paraFabEl.style.left = Math.min(r.right + 12, window.innerWidth - 48) + 'px';
+  paraFabEl.style.top = r.top + 'px';
+}
+function addParaNote(block: HTMLElement) {
+  if (!bodyEl || !currentSectionKey) return;
+  const existing = forSection(currentSectionKey).find(n => n.kind === 'para' && anchorEl[n.id] === block);
+  if (existing) { hideFab(); openEdit(existing.id); return; }
+  const ctx = getBlockContext(bodyEl, block);
+  if (!ctx) { hideFab(); return; }
+  const ann = createAnnotation({
+    section_key: currentSectionKey,
+    kind: 'para',
+    quote: ctx.quote, prefix: ctx.prefix, suffix: ctx.suffix, text_position: ctx.text_position,
+    body: '',
+    title_snapshot: currentTitleSnapshot,
+  });
+  hideFab();
+  isNew = true;
+  pendingFocus = ann.id;
+  activeId = ann.id;
+  editingId = ann.id;
+  refresh();
+}
+
+// ---- dismiss popups / deactivate on outside interaction ---------------------
+function onDocDown(e: MouseEvent) {
+  const t = e.target as HTMLElement;
+  if (!t.closest) return;
+  if (popupEl && !t.closest('.ann-popup')) removePopup();
+  if (markMenuEl && !t.closest('.ann-mark-menu') && !t.closest('mark[data-ann-id]')) removeMarkMenu();
+  if (paraFabEl && paraFabEl.style.display !== 'none' && !t.closest('.ann-para-fab') && !t.closest('[data-block-id]')) hideFab();
+  if (activeId && !editingId
+    && !t.closest('.ann-anchored') && !t.closest('.ann-page-panel')
+    && !t.closest('mark[data-ann-id]') && !t.closest('.para-anchor')) {
+    setActive(null);
+  }
 }
 
 // ---- init / teardown --------------------------------------------------------
-let teardown: (() => void) | null = null;
-
 export function initAnnotations(signal: AbortSignal) {
   const host = document.querySelector<HTMLElement>('[data-section-key]');
   if (!host) return;
+  bodyEl = host.querySelector<HTMLElement>('[data-annot-body]');
+  rowEl = host.querySelector<HTMLElement>('[data-annot-row]');
+  railEl = host.querySelector<HTMLElement>('[data-annot-rail]');
+  if (!bodyEl || !railEl) return;
 
+  currentContainer = bodyEl;
   currentSectionKey = host.dataset.sectionKey!;
-  currentTitleSnapshot = host.querySelector('h1')?.textContent?.trim() || currentSectionKey;
+  currentTitleSnapshot = host.querySelector('.section-h h1, h1')?.textContent?.trim() || currentSectionKey;
+  tagBlocks(bodyEl);
 
-  const contentEl = host.querySelector<HTMLElement>(':scope > div:not(.section-head):not([hidden])') || host;
-  currentContainer = contentEl;
+  mq = window.matchMedia('(max-width: 1199px)');
+  narrow = mq.matches;
+  const onMq = () => { narrow = mq!.matches; layout(); };
+  mq.addEventListener('change', onMq);
 
-  // inject notes panel
-  const panelHtml =
-    `<details class="ann-panel" open>` +
-      `<summary class="ann-panel-toggle">Notes <span class="ann-count"></span></summary>` +
-      `<div class="ann-list"></div>` +
-      `<div class="ann-add-row">` +
-        `<button type="button" class="ann-add-note-btn" data-action="add-page-note">+ Page note</button>` +
-      `</div>` +
-    `</details>`;
+  document.addEventListener('selectionchange', onSelectionChange, { signal });
+  bodyEl.addEventListener('click', onBodyClick as EventListener, { signal });
+  bodyEl.addEventListener('mousemove', onBodyMove as EventListener, { signal });
+  bodyEl.addEventListener('mouseleave', onBodyLeave, { signal });
+  railEl.addEventListener('click', onRailClick as EventListener, { signal });
+  document.addEventListener('mousedown', onDocDown as EventListener, { signal, capture: true });
 
-  const pager = host.querySelector('.pager');
-  const panelWrapper = document.createElement('div');
-  panelWrapper.className = 'ann-panel-wrap';
-  panelWrapper.innerHTML = panelHtml;
-  if (pager) host.insertBefore(panelWrapper, pager);
-  else host.appendChild(panelWrapper);
-  notesPanel = panelWrapper.querySelector('.ann-panel');
+  const onScroll = () => {
+    if (paraFabEl && paraFabEl.style.display !== 'none') hideFab();
+    if (scrollRaf) return;
+    scrollRaf = requestAnimationFrame(() => { scrollRaf = 0; if (!narrow) updateOffscreen(); });
+  };
+  window.addEventListener('scroll', onScroll, { signal, passive: true, capture: true });
+  window.addEventListener('resize', layout, { signal });
 
-  renderHighlights(currentContainer, currentSectionKey);
-  renderNotesPanel(currentSectionKey);
-
-  // selection popover
-  const selHandler = () => onSelectionChange();
-  document.addEventListener('selectionchange', selHandler, { signal });
-
-  // click on marks
-  contentEl.addEventListener('click', onMarkClick as EventListener, { signal });
-
-  // panel interactions (delegated)
-  panelWrapper.addEventListener('click', (e: MouseEvent) => {
-    const target = e.target as HTMLElement;
-
-    const editBtn = target.closest<HTMLElement>('[data-ann-edit]');
-    if (editBtn) { openNoteEditor(editBtn.dataset.annEdit!); return; }
-
-    const delBtn = target.closest<HTMLElement>('[data-ann-delete]');
-    if (delBtn) {
-      deleteAnnotation(delBtn.dataset.annDelete!);
-      if (currentContainer && currentSectionKey) {
-        renderHighlights(currentContainer, currentSectionKey);
-        renderNotesPanel(currentSectionKey);
-      }
-      return;
-    }
-
-    const saveBtn = target.closest<HTMLElement>('[data-ann-save]');
-    if (saveBtn) {
-      const id = saveBtn.dataset.annSave!;
-      const textarea = saveBtn.closest('.ann-editor')?.querySelector('textarea');
-      if (textarea) {
-        updateAnnotation(id, { body: textarea.value || null });
-        if (currentContainer && currentSectionKey) {
-          renderHighlights(currentContainer, currentSectionKey);
-          renderNotesPanel(currentSectionKey);
-        }
-      }
-      return;
-    }
-
-    const cancelBtn = target.closest<HTMLElement>('[data-ann-cancel]');
-    if (cancelBtn) {
-      cancelBtn.closest('.ann-editor')?.remove();
-      return;
-    }
-
-    if (target.closest('[data-action="add-page-note"]')) {
-      if (!currentSectionKey) return;
-      const ann = createAnnotation({
-        section_key: currentSectionKey,
-        kind: 'note',
-        title_snapshot: currentTitleSnapshot,
-      });
-      renderNotesPanel(currentSectionKey);
-      openNoteEditor(ann.id);
-      return;
-    }
-  }, { signal });
-
-  // dismiss popover on click outside
-  document.addEventListener('mousedown', (e: MouseEvent) => {
-    if (popover && !popover.contains(e.target as Node)) removePopover();
-  }, { signal });
+  refresh();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (railEl) layout(); });
 
   signal.addEventListener('abort', () => {
-    removePopover();
-    panelWrapper.remove();
-    if (currentContainer) clearMarks(currentContainer);
-    currentContainer = null;
-    currentSectionKey = null;
-    notesPanel = null;
+    removePopup();
+    removeMarkMenu();
+    if (paraFabEl) { paraFabEl.remove(); paraFabEl = null; }
+    paraFabBlock = null;
+    if (hideFabTimer) { clearTimeout(hideFabTimer); hideFabTimer = null; }
+    mq?.removeEventListener('change', onMq);
+    if (currentContainer) { clearMarks(currentContainer); clearParaOutlines(currentContainer); }
+    currentContainer = null; currentSectionKey = null;
+    bodyEl = null; rowEl = null; railEl = null;
+    pagePanelEl = null; pageListEl = null; aboveEl = null; belowEl = null;
+    activeId = null; editingId = null; isNew = false; pageCollapsed = false;
+    pendingScroll = null; pendingFocus = null;
+    for (const k in cardRefs) delete cardRefs[k];
+    for (const k in anchorEl) delete anchorEl[k];
   });
 }
 

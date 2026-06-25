@@ -85,7 +85,10 @@ const kids = childrenOf(s.key);
         <SectionControls sectionKey={s.key} />
       </div>
     </div>
-    <div set:html={bodyHtml} />
+    <div class="annot-row" data-annot-row>
+      <div class="annot-body" data-annot-body set:html={bodyHtml} />
+      <div class="annot-rail" data-annot-rail aria-hidden="true"></div>
+    </div>
     {kids.length > 0 && (
       <nav class="subtoc" aria-label="Sections in this part">
         <h2 class="subtoc-h">In this part</h2>
