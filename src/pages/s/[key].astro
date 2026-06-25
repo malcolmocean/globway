@@ -33,7 +33,9 @@ if (redirectTo) {
   return new Response(
     `<!doctype html><meta charset=utf-8><title>redirecting…</title>` +
       `<meta http-equiv="refresh" content="0; url=${dest}">` +
-      `<script>location.replace(${JSON.stringify(dest)})</script>` +
+      // Split the tag so Astro's dev compiler doesn't mistake this server-rendered
+      // string for a hoisted client <script> and fail to parse the ${…} as JS.
+      `<scr` + `ipt>location.replace(${JSON.stringify(dest)})</scr` + `ipt>` +
       `<p>Redirecting to <a href="${dest}">${redirectTo}</a>…</p>`,
     { headers: { 'content-type': 'text/html' } }
   );
