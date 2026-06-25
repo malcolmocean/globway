@@ -426,6 +426,18 @@ async function pullAnnotations() {
 
   annotations = remote;
   saveLocal(annotations);
+  // A pull can land after the section already rendered (it's async and may be
+  // triggered by a late sign-in / coming back online). Re-render so freshly
+  // pulled annotations actually appear, mirroring pullRemote()'s applyAll().
+  renderCurrentSection();
+}
+
+// Re-render the section currently on screen, if any. No-op before a section page
+// has initialised (currentSectionKey is null on the home page / decks).
+function renderCurrentSection() {
+  if (!currentContainer || !currentSectionKey || !notesPanel) return;
+  renderHighlights(currentContainer, currentSectionKey);
+  renderNotesPanel(currentSectionKey);
 }
 
 // ---- CRUD -------------------------------------------------------------------

@@ -13,3 +13,4 @@ public/p8.json
 
 # supabase CLI local link state
 supabase/.temp/
+supabase/.branches/
