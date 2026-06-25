@@ -1,4 +1,4 @@
-# little things
+## little things
 
 [x] 1 nav stuff
   - add a way to view a list of only starred sections
@@ -48,3 +48,21 @@
     in-text links rewritten to absolute https://globway.top/... URLs. Works offline
     (md embedded per page). Hidden on the merged colophon (no single-source md).
 
+## Herschel's wishlist
+
+- [ ] kb etc
+  - [ ] hotkeys for all major actions, switch focus between main text and sidebar, arrow keys/hjkl for sidebar section selection, left/right in the main bar should prolly go to next section. 
+  - [ ] relatedly, clicking on a link in the left sidebar should automatically focus the main text body, or this should at least be an option
+- [ ] incremental reading stuff
+  - I'm not sure I understand "actual" incremental reading, but probably something which surfaces old notes (your own notes and highlights) at some intervals
+- [ ] font options, some slightly ricier fonts, variously nice and clean
+- [ ] notes interface
+  - [ ] dark mode colors for highlight broken
+  - [ ] ui sucks in general, prolly just have claude design mess around etc
+  - [ ] prolly notes should appear on the side on desktop, not sure on mobile. 
+  - [ ] support markdown in notes
+  - [ ] C-enter in the text field to submit
+  - [ ] really should have some nice interface for kb navigation for writing notes, but this is maybe for later or something
+	- [ ] could just be like, you can jump focus by paragraph, and then can do a highlight + note on the paragraph. and then some way to jump to existing notes, or jump between each of the notes + page level note. likely shouldn't be modal, not sure what the binding should be.
+	- [ ] again prolly should wait until more stuff in place for hotkeys in general
+  
