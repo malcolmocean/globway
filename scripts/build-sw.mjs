@@ -88,6 +88,17 @@ self.addEventListener('message', (event) => {
   if (event.data === 'skipWaiting') self.skipWaiting();
 });
 
+// GitHub Pages 301-redirects directory paths (/p3 -> /p3/), so a precached page
+// stored via cache.add() followed that redirect: its Response carries
+// redirected:true and a query-stripped url (/p3/). Astro's SPA router honours
+// response.redirected and would rewrite /p3?r=1 to /p3/, dropping the ?r= / ?p=
+// the deck reader (random draw, card permalinks) depends on. Hand back a clean
+// copy so the response reports no redirect and the requested URL+query stands.
+function cleanRedirect(res) {
+  if (!res.redirected) return res;
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;                      // never touch writes
@@ -106,12 +117,12 @@ self.addEventListener('fetch', (event) => {
           if (fresh && fresh.ok) await cache.put(req, fresh.clone());
         } catch {}
       })());
-      return cached;
+      return cleanRedirect(cached);
     }
     try {
       const fresh = await fetch(req);
       if (fresh && fresh.ok && fresh.type === 'basic') await cache.put(req, fresh.clone());
-      return fresh;
+      return cleanRedirect(fresh);
     } catch {
       // Offline and uncached: for a page navigation, fall back to the app shell.
       if (req.mode === 'navigate') {
