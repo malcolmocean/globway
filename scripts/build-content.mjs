@@ -9,6 +9,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import MarkdownIt from 'markdown-it';
 import { parse as parseHtml } from 'node-html-parser';
@@ -127,6 +128,7 @@ let sections = located
       kind: slice[0]?.kind || 'main',
       file: slice[0]?.file || '',
       wordcount: plain.split(/\s+/).filter(Boolean).length,
+      contentHash: contentHash(plain),
       aliases: [...aliases],
       html: rewritten,
       // Raw markdown source, kept for the "copy as markdown" button. Dead nav
@@ -234,6 +236,12 @@ fs.writeFileSync(
     else troots.push(n);
   }
   fs.writeFileSync(path.join(OUT, 'toc.json'), JSON.stringify(troots, null, 0));
+}
+// Per-section content hashes: powers the annotation staleness fast-path.
+{
+  const hashes = {};
+  for (const s of sections) hashes[s.key] = s.contentHash;
+  fs.writeFileSync(path.join(OUT, 'hashes.json'), JSON.stringify(hashes, null, 0));
 }
 // Decks ship as static assets the presenter fetches once (cached), rather than
 // inlining ~0.5 MB into the page HTML.
@@ -407,7 +415,9 @@ function curateFrontMatter(sections, aliasMap) {
   }
   into.aliases = [...aliases];
   aliasMap[into.key] = into.aliases;
-  into.wordcount = into.html.replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length;
+  const intoPlain = into.html.replace(/<[^>]+>/g, ' ');
+  into.wordcount = intoPlain.split(/\s+/).filter(Boolean).length;
+  into.contentHash = contentHash(intoPlain);
 
   return sections.filter((s) => !removed.has(s.key));
 }
@@ -449,4 +459,12 @@ function decodeEntities(s) {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'");
+}
+
+function normalizePlaintext(text) {
+  return text.normalize('NFC').replace(/\s+/g, ' ').trim();
+}
+
+function contentHash(plaintext) {
+  return crypto.createHash('sha256').update(normalizePlaintext(plaintext)).digest('hex').slice(0, 16);
 }

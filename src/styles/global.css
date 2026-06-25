@@ -303,3 +303,91 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .meta { color: var(--muted); font-size: 13px; font-family: ui-sans-serif, system-ui, sans-serif; }
 .sidebar-foot { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--line);
   font-family: ui-sans-serif, system-ui, sans-serif; font-size: 11px; line-height: 1.45; color: var(--muted); }
+
+/* ---- annotations: highlights & notes ---- */
+mark.hl { cursor: pointer; border-radius: 2px; padding: 0 1px; }
+mark.hl-yellow { background: rgba(250, 220, 50, .35); }
+mark.hl-green { background: rgba(80, 200, 100, .30); }
+mark.hl-blue { background: rgba(80, 150, 240, .25); }
+mark.hl-pink { background: rgba(240, 100, 160, .28); }
+@media (prefers-color-scheme: dark) {
+  mark.hl-yellow { background: rgba(250, 220, 50, .22); }
+  mark.hl-green { background: rgba(80, 200, 100, .20); }
+  mark.hl-blue { background: rgba(80, 150, 240, .18); }
+  mark.hl-pink { background: rgba(240, 100, 160, .18); }
+}
+
+/* selection popover */
+.ann-popover {
+  position: absolute; z-index: 100; display: flex; gap: 2px; padding: 4px 6px;
+  background: var(--bg-elev); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.15); font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.ann-pop-btn {
+  border: 0; background: none; cursor: pointer; padding: 4px 6px; border-radius: 5px;
+  font-size: 14px; line-height: 1; display: flex; align-items: center;
+}
+.ann-pop-btn:hover { background: rgba(0,0,0,.06); }
+@media (prefers-color-scheme: dark) { .ann-pop-btn:hover { background: rgba(255,255,255,.08); } }
+.ann-pop-swatch { display: block; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid rgba(0,0,0,.12); }
+.ann-pop-swatch.hl-yellow { background: rgba(250, 220, 50, .7); }
+.ann-pop-swatch.hl-green { background: rgba(80, 200, 100, .6); }
+.ann-pop-swatch.hl-blue { background: rgba(80, 150, 240, .55); }
+.ann-pop-swatch.hl-pink { background: rgba(240, 100, 160, .55); }
+
+/* notes panel */
+.ann-panel-wrap { margin: 2rem 0 0; }
+.ann-panel { border: 1px solid var(--line); border-radius: 10px; background: var(--bg-elev);
+  font-family: ui-sans-serif, system-ui, sans-serif; font-size: 14px; }
+.ann-panel-toggle { cursor: pointer; padding: .6rem .9rem; font-weight: 600; font-size: 13px;
+  letter-spacing: .02em; color: var(--text); list-style: none; }
+.ann-panel-toggle::-webkit-details-marker { display: none; }
+.ann-panel-toggle::before { content: '▸ '; }
+.ann-panel[open] > .ann-panel-toggle::before { content: '▾ '; }
+.ann-count { color: var(--muted); font-weight: 400; }
+.ann-list { padding: 0 .9rem .5rem; }
+.ann-empty { color: var(--muted); font-size: 13px; margin: .3rem 0; }
+.ann-item { padding: .5rem 0; border-bottom: 1px solid var(--line); }
+.ann-item:last-child { border-bottom: 0; }
+.ann-item-head { display: flex; align-items: center; gap: .4rem; }
+.ann-item-head .ann-edit-btn,
+.ann-item-head .ann-del-btn {
+  border: 0; background: none; cursor: pointer; font-size: 13px; color: var(--muted);
+  padding: 2px 4px; border-radius: 4px;
+}
+.ann-item-head .ann-edit-btn:hover,
+.ann-item-head .ann-del-btn:hover { background: rgba(0,0,0,.06); }
+.ann-item-head { margin-left: auto; justify-content: flex-end; }
+.ann-quote { font-size: 13px; color: var(--muted); font-style: italic; padding: 2px 6px;
+  border-left: 3px solid; border-radius: 2px; margin: .3rem 0; }
+.ann-quote.hl-yellow { border-color: rgba(250, 220, 50, .7); }
+.ann-quote.hl-green { border-color: rgba(80, 200, 100, .6); }
+.ann-quote.hl-blue { border-color: rgba(80, 150, 240, .55); }
+.ann-quote.hl-pink { border-color: rgba(240, 100, 160, .55); }
+.ann-body { font-size: 14px; margin: .3rem 0 0; white-space: pre-wrap; }
+.ann-orphan { opacity: .7; }
+.ann-orphan-label { font-size: 11px; padding: 1px 6px; border-radius: 999px;
+  background: rgba(200,60,60,.12); color: #b44; }
+.ann-kind-icon { font-size: 12px; }
+.ann-add-row { padding: .4rem .9rem .6rem; }
+.ann-add-note-btn {
+  font: inherit; font-size: 13px; cursor: pointer; color: var(--accent);
+  background: none; border: 1px dashed var(--line); border-radius: 6px;
+  padding: .3rem .7rem; width: 100%; text-align: center;
+}
+.ann-add-note-btn:hover { border-color: var(--accent); }
+
+/* inline note editor */
+.ann-editor { margin: .4rem 0 0; }
+.ann-textarea {
+  width: 100%; font: inherit; font-size: 13px; padding: .4rem .5rem; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--bg); color: var(--text); resize: vertical; min-height: 3.5em;
+}
+.ann-textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.ann-editor-actions { display: flex; gap: .4rem; margin-top: .3rem; }
+.ann-save-btn, .ann-cancel-btn {
+  font: inherit; font-size: 12px; cursor: pointer; padding: .25rem .6rem;
+  border-radius: 5px; border: 1px solid var(--line);
+}
+.ann-save-btn { background: var(--accent); color: #fff; border-color: var(--accent); }
+.ann-cancel-btn { background: var(--bg-elev); color: var(--text); }

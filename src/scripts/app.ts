@@ -5,6 +5,7 @@
 //   3. Supabase not configured           -> local only (dev / pre-setup).
 import { getSupabase, isConfigured } from '../lib/supabase';
 import tocData from '../data/toc.json';
+import { initAnnotations, pullAnnotations } from './annotations';
 
 type TocNode = { key: string; title: string; depth: number; children: TocNode[] };
 type Entry = { read?: boolean; starred?: boolean; hidden?: boolean; progress?: number; updated_at: string };
@@ -776,11 +777,11 @@ function once() {
   window.addEventListener('resize', () => { computeStickyTops(); updateStickyShadows(); });
   window.addEventListener('load', () => { computeStickyTops(); updateStickyShadows(); }); // re-measure after fonts settle
   if (sb) {
-    getSession().then((session) => { renderAuth(session); pullRemote(); });
-    sb.auth.onAuthStateChange((_evt, session) => { renderAuth(session); pullRemote(); });
+    getSession().then((session) => { renderAuth(session); pullRemote(); pullAnnotations(); });
+    sb.auth.onAuthStateChange((_evt, session) => { renderAuth(session); pullRemote(); pullAnnotations(); });
     // Back online after offline edits? Re-run the merge: pullRemote() pushes any
     // local-newer rows up (last-write-wins) and pulls remote changes down.
-    window.addEventListener('online', () => { pullRemote(); });
+    window.addEventListener('online', () => { pullRemote(); pullAnnotations(); });
   } else {
     renderAuth(null);
   }
@@ -793,6 +794,7 @@ function setupPage() {
   syncCopyButton();
   applyAll();
   initReadTracking(pageAbort.signal);
+  initAnnotations(pageAbort.signal);
   initDeck(pageAbort.signal);
   computeStickyTops();
   scrollSidebarToCurrent();

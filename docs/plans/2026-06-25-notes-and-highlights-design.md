@@ -1,7 +1,7 @@
 # Globway — page-level notes & text highlights
 
 **Date:** 2026-06-25
-**Status:** Design agreed; not yet implemented.
+**Status:** v1 implemented (migration, build hashes, anchoring, UI, sync).
 
 ## Purpose
 
