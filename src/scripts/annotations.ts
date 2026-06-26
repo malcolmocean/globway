@@ -444,12 +444,22 @@ function blockForRange(range: Range, container: Element): HTMLElement | null {
 }
 
 // Fast exact-text path: the block whose normalized text equals the stored quote.
-function blockForQuote(container: Element, quote: string | null): HTMLElement | null {
+// When a section repeats a paragraph verbatim (same text *and* surroundings, so
+// prefix/suffix can't tell the copies apart) several blocks match; disambiguate
+// by the stored text_position — the only field that distinguishes exact
+// duplicates — picking the block whose start offset is nearest it. Without this a
+// note/highlight on the 2nd copy resolved (and toggled) the 1st.
+function blockForQuote(container: Element, quote: string | null, position?: number | null): HTMLElement | null {
   if (!quote) return null;
-  for (const b of Array.from(container.querySelectorAll<HTMLElement>('[data-block-id]'))) {
-    if (normalizePlaintext(b.textContent || '') === quote) return b;
+  const matches = Array.from(container.querySelectorAll<HTMLElement>('[data-block-id]'))
+    .filter(b => normalizePlaintext(b.textContent || '') === quote);
+  if (matches.length <= 1 || position == null) return matches[0] ?? null;
+  let best = matches[0], bestDist = Infinity;
+  for (const b of matches) {
+    const d = Math.abs(blockStartOffset(container, b) - position);
+    if (d < bestDist) { bestDist = d; best = b; }
   }
-  return null;
+  return best;
 }
 
 function clearParaOutlines(container: Element) {
@@ -469,7 +479,7 @@ function renderParas(container: Element, sectionKey: string) {
 
   for (const ann of anns) {
     delete anchorEl[ann.id];
-    let block = blockForQuote(container, ann.quote);
+    let block = blockForQuote(container, ann.quote, ann.text_position);
     let result: AnchorResult = null;
     if (!block) {
       result = anchorHighlight(ann, container);     // self-healing fuzzy fallback
@@ -510,6 +520,15 @@ function normalizedOffsetAt(container: Element, endNode: Node, endOffset: number
   pre.selectNodeContents(container);
   try { pre.setEnd(endNode, endOffset); } catch { return 0; }
   return pre.toString().normalize('NFC').replace(/\s+/g, ' ').replace(/^ /, '').length;
+}
+
+// Normalized-plaintext offset of a tagged block's start (where it begins in
+// extractPlaintext coordinates) — *this* block's real position, used to pick the
+// right one among exact-duplicate blocks and to anchor a paragraph note.
+function blockStartOffset(container: Element, block: Element): number {
+  const parent = block.parentNode || container;
+  const idx = Array.prototype.indexOf.call(parent.childNodes, block);
+  return normalizedOffsetAt(container, parent, idx);
 }
 
 type AnchorContext = { quote: string; prefix: string; suffix: string; text_position: number };
@@ -575,8 +594,7 @@ function getBlockContext(container: Element, block: Element): {
   if (!quote) return null;
   const plain = extractPlaintext(container);
   // Offset of *this* block, not the first block whose text happens to match.
-  let idx = normalizedOffsetAt(container, block.parentNode || container,
-    Array.prototype.indexOf.call((block.parentNode || container).childNodes, block));
+  let idx = blockStartOffset(container, block);
   if (plain.slice(idx, idx + quote.length) !== quote) {
     const near = plain.indexOf(quote, Math.max(0, idx - 2));
     idx = near >= 0 ? near : plain.indexOf(quote);
