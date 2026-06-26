@@ -1188,7 +1188,7 @@ function showFabFor(block: HTMLElement) {
   if (!paraFabEl) {
     paraFabEl = document.createElement('div');
     paraFabEl.className = 'ann-para-fab';
-    paraFabEl.innerHTML = `<button type="button" title="Add a note on this block">¶</button>`;
+    paraFabEl.innerHTML = `<button type="button" title="Add a note on this block">✎</button>`;
     document.body.appendChild(paraFabEl);
     paraFabEl.addEventListener('mouseenter', () => { if (hideFabTimer) { clearTimeout(hideFabTimer); hideFabTimer = null; } });
     paraFabEl.addEventListener('mouseleave', scheduleHideFab);

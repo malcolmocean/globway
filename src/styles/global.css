@@ -326,10 +326,14 @@ mark.hl {
 }
 mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--para-edge); border-bottom-width: 3px; }
 
-/* paragraph-note outline drawn with box-shadow so it never reflows the prose */
-.para-anchor { background: var(--para); border-radius: 4px; cursor: pointer;
-  box-shadow: 0 0 0 4px var(--para), 0 0 0 5px var(--para-edge); }
-.para-anchor.is-active { box-shadow: 0 0 0 4px var(--para), 0 0 0 6px var(--para-edge); }
+/* paragraph-note outline. The tint + breathing room live on an ::after that's
+   inset negative (bigger than the block) so it adds visual padding without ever
+   reflowing the prose; the outline rides outline-offset to sit on that edge. */
+.para-anchor { position: relative; cursor: pointer;
+  outline: 2px solid var(--para-edge); outline-offset: 5px; border-radius: 1px; }
+.para-anchor::after { content: ''; position: absolute; inset: -5px; z-index: -1;
+  background: var(--para); border-radius: 6px; pointer-events: none; }
+.para-anchor.is-active { outline-width: 3px; }
 
 @media (min-width: 1200px) {
   .content { max-width: calc(var(--maxw) + var(--rail-w) + 2.5rem); }
@@ -402,7 +406,7 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
 .ann-offscreen { position: fixed; transform: translateX(-50%); width: 34px; height: 34px;
   align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: var(--muted);
   background: var(--bg-elev); border: 1px solid var(--line); border-radius: 50%; cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,.12); z-index: 24; }
+  box-shadow: 0 1px 3px rgba(0,0,0,.05); z-index: 24; }
 .ann-offscreen:hover { color: var(--text); border-color: var(--muted); }
 
 /* floating selection popup / bare-mark menu / ¶ fab (appended to <body>) */
@@ -423,7 +427,7 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
 .ann-mm-remove:hover { background: color-mix(in srgb, #c0392b 12%, transparent) !important; }
 .ann-para-fab { align-items: center; justify-content: center; }
 .ann-para-fab button { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line);
-  background: var(--bg-elev); color: var(--para-edge); cursor: pointer; font-size: 17px; line-height: 1;
-  box-shadow: 0 3px 10px rgba(0,0,0,.14); display: flex; align-items: center; justify-content: center; }
+  background: var(--bg-elev); color: var(--para-edge); cursor: pointer; font-size: 16px; line-height: 1;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04); display: flex; align-items: center; justify-content: center; }
 .ann-para-fab button:hover { border-color: var(--para-edge); }
 
