@@ -268,7 +268,10 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
    lifted out of the article body (see s/[key].astro) so it travels with the
    controls, which float to the right of it on the same row. */
 .section-head {
-  position: sticky; top: 0; z-index: 5;
+  /* Above the side-rail cards (z 6–24) so they scroll *under* the sticky header
+     instead of covering the top-bar controls; still below the floating popups
+     (z 90) and the mobile drawer toggle (z 60). */
+  position: sticky; top: 0; z-index: 40;
   background: var(--bg); margin: 0 0 1.2rem;
   padding: .5rem 0 .5rem; border-bottom: 1px solid var(--line);
 }
@@ -330,8 +333,8 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
    inset negative (bigger than the block) so it adds visual padding without ever
    reflowing the prose; the outline rides outline-offset to sit on that edge. */
 .para-anchor { position: relative; cursor: pointer;
-  outline: 2px solid var(--para-edge); outline-offset: 5px; border-radius: 1px; }
-.para-anchor::after { content: ''; position: absolute; inset: -5px; z-index: -1;
+  outline: 2px solid var(--para-edge); outline-offset: 4px; border-radius: 1px; }
+.para-anchor::after { content: ''; position: absolute; inset: -4px; z-index: -1;
   background: var(--para); border-radius: 6px; pointer-events: none; }
 .para-anchor.is-active { outline-width: 3px; }
 
@@ -365,8 +368,29 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
 .ann-card.is-active { box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 0 0 1px var(--para-edge); }
 .ann-card-row { display: flex; align-items: flex-start; gap: .5rem; }
 .ann-md { flex: 1; min-width: 0; font-size: 14px; line-height: 1.5; color: var(--text); word-wrap: break-word; }
-.ann-md p { margin: 0; }
+/* full GFM rendering: tighten the first/last block so the card doesn't gain
+   stray top/bottom space, then give every other element sane spacing for the
+   narrow rail width. */
+.ann-md > :first-child { margin-top: 0; }
+.ann-md > :last-child { margin-bottom: 0; }
+.ann-md p { margin: 0 0 .5em; }
+.ann-md h1, .ann-md h2, .ann-md h3, .ann-md h4, .ann-md h5, .ann-md h6 {
+  margin: .7em 0 .35em; line-height: 1.25; font-weight: 700; }
+.ann-md h1 { font-size: 1.25em; } .ann-md h2 { font-size: 1.15em; }
+.ann-md h3 { font-size: 1.05em; } .ann-md h4, .ann-md h5, .ann-md h6 { font-size: 1em; }
+.ann-md ul, .ann-md ol { margin: 0 0 .5em; padding-left: 1.3em; }
+.ann-md li { margin: .1em 0; }
+.ann-md li > input[type=checkbox] { margin: 0 .4em 0 -1.1em; vertical-align: middle; }
+.ann-md li.task-list-item { list-style: none; }
+.ann-md blockquote { margin: .5em 0; padding: .1em .8em; border-left: 3px solid var(--line); color: var(--muted); }
+.ann-md hr { border: 0; border-top: 1px solid var(--line); margin: .7em 0; }
 .ann-md code { font-family: ui-monospace, Menlo, monospace; font-size: .86em; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+.ann-md pre { background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: .55rem .65rem; overflow-x: auto; margin: 0 0 .5em; }
+.ann-md pre code { background: none; padding: 0; font-size: .82em; }
+.ann-md img { max-width: 100%; height: auto; border-radius: 6px; }
+.ann-md table { border-collapse: collapse; display: block; overflow-x: auto; font-size: .92em; margin: 0 0 .5em; }
+.ann-md th, .ann-md td { border: 1px solid var(--line); padding: .2em .5em; text-align: left; }
+.ann-md th { background: var(--bg); font-weight: 600; }
 .ann-md a { color: var(--accent); }
 .ann-anchor-label { font-size: 11.5px; color: var(--muted); font-style: italic; margin-bottom: .4rem; line-height: 1.4; }
 .ann-detached { font-size: 11px; color: #b4673a; margin-bottom: .35rem; }
@@ -389,7 +413,7 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
   border: 1.5px solid var(--hl-edge); display: flex; align-items: center; justify-content: center;
   font-size: 9px; color: var(--muted); }
 .ann-pill.is-para .ann-pill-dot { background: var(--para); border-color: var(--para-edge); }
-.ann-pill-text { flex: 1; min-width: 0; font-size: 12.5px; color: var(--muted);
+.ann-pill-text { flex: 1; min-width: 0; font-size: 12.5px; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* editor */
@@ -414,20 +438,26 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
 .ann-popup { display: flex; gap: .15rem; transform: translate(-50%, -100%);
   background: var(--accent); border-radius: 10px; padding: 4px; box-shadow: 0 6px 18px rgba(0,0,0,.24); }
 .ann-popup button { font: 600 12.5px/1 inherit; padding: .5rem .8rem; border: 0; border-radius: 7px;
-  background: transparent; color: #fff; cursor: pointer; }
+  background: transparent; color: #fff; cursor: pointer; display: inline-flex; align-items: center; gap: .35em; }
 .ann-popup button:hover { background: rgba(255,255,255,.15); }
+/* leading glyphs in popup / mark-menu buttons read larger than the label text */
+.ann-ico { font-size: 1.35em; line-height: 1; }
 .ann-popup-sep { width: 1px; background: rgba(255,255,255,.25); margin: 4px 0; }
 .ann-mark-menu { display: flex; gap: .1rem; transform: translate(-50%, -100%);
   background: var(--bg-elev); border: 1px solid var(--line); border-radius: 10px; padding: 4px;
   box-shadow: 0 6px 18px rgba(0,0,0,.18); }
 .ann-mark-menu button { font: 600 12.5px/1 inherit; padding: .45rem .7rem; border: 0; border-radius: 7px;
-  background: transparent; color: var(--text); cursor: pointer; }
+  background: transparent; color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: .35em; }
 .ann-mark-menu button:hover { background: var(--bg); }
 .ann-mm-remove { color: #c0392b !important; }
 .ann-mm-remove:hover { background: color-mix(in srgb, #c0392b 12%, transparent) !important; }
-.ann-para-fab { align-items: center; justify-content: center; }
-.ann-para-fab button { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line);
-  background: var(--bg-elev); color: var(--para-edge); cursor: pointer; font-size: 16px; line-height: 1;
+/* The transparent padding enlarges the (invisible) hover catch area and bridges
+   the gap between the text and the button, so the cursor doesn't fall out of
+   "hovering" on its way over. JS offsets the position by this padding. */
+.ann-para-fab { align-items: center; justify-content: center; padding: 12px; }
+.ann-para-fab button { width: 42px; height: 42px; padding: 0; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--bg-elev); color: var(--para-edge); cursor: pointer; line-height: 0;
   box-shadow: 0 1px 2px rgba(0,0,0,.04); display: flex; align-items: center; justify-content: center; }
-.ann-para-fab button:hover { border-color: var(--para-edge); }
+.ann-para-fab button svg { display: block; }
+.ann-para-fab button:hover { border-color: var(--para-edge); background: color-mix(in srgb, var(--para-edge) 8%, var(--bg-elev)); }
 

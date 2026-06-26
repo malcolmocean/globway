@@ -1,4 +1,6 @@
 import { getSupabase } from '../lib/supabase';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import aliasData from '../data/aliases.json';
 import hashData from '../data/hashes.json';
 
@@ -547,16 +549,29 @@ function getBlockContext(container: Element, block: Element): {
 }
 
 // ---- minimal markdown (bold/italic/code/link), HTML-escaped first -----------
+// Note bodies render as full GitHub-flavored Markdown (tables, task lists,
+// strikethrough, autolinks, fenced code, headings, …) via `marked`, then run
+// through DOMPurify. We don't need the hand-rolled subset anymore.
+//
+// Security: notes sync per-user through Supabase, but treat the rendered HTML as
+// untrusted anyway (a synced row, an imported note, or a future "shared note"
+// could carry a hostile payload). marked emits raw HTML for any HTML the author
+// typed, so DOMPurify is the actual guard — it drops <script>, inline event
+// handlers, javascript:/data: URLs, etc. The afterSanitizeAttributes hook then
+// forces every surviving link to open safely in a new tab.
+marked.setOptions({ gfm: true, breaks: true });
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.tagName === 'A') {
+    node.setAttribute('target', '_blank');
+    node.setAttribute('rel', 'noopener noreferrer');
+  }
+});
+
 function md(src: string | null): string {
-  let s = src == null ? '' : String(src);
-  s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  s = s.replace(/`([^`]+)`/g, (_m, c) => `<code>${c}</code>`);
-  s = s.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
-    (_m, t, u) => `<a href="${u}" target="_blank" rel="noopener">${t}</a>`);
-  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, (_m, p, c) => `${p}<em>${c}</em>`);
-  s = s.replace(/\n/g, '<br>');
-  return s;
+  const s = src == null ? '' : String(src);
+  if (!s.trim()) return '';
+  const html = marked.parse(s, { async: false }) as string;
+  return DOMPurify.sanitize(html);
 }
 
 // ---- selection capture ------------------------------------------------------
@@ -819,7 +834,7 @@ function buildCard(n: Annotation): HTMLElement {
   if (editing) {
     card.innerHTML = label
       + `<textarea class="ann-textarea" data-editor="${n.id}" placeholder="Write a note… Markdown supported">${escapeHtml(n.body || '')}</textarea>`
-      + `<div class="ann-md-hint">**bold** · *italic* · \`code\` · [link](url) — ⌘/Ctrl+Enter to save · Esc to cancel</div>`
+      + `<div class="ann-md-hint">Full Markdown — headings, lists, tables, \`code\`, [links](url) · ⌘/Ctrl+Enter to save · Esc to cancel</div>`
       + `<div class="ann-editor-actions"><button type="button" class="ann-save" data-save="${n.id}">Save</button>`
       + `<button type="button" class="ann-cancel" data-cancel="${n.id}">Cancel</button></div>`;
     return card;
@@ -943,10 +958,15 @@ function layoutWide() {
   if (!railEl || !bodyEl || !currentSectionKey) return;
   const rb = railEl.getBoundingClientRect();
   if (pagePanelEl) {
+    // Page notes are pinned to the *bottom* of the rail (fixed). Anchoring at
+    // the bottom keeps a constant, tidy offset from the viewport edge however
+    // far you've scrolled (a top-pinned panel drifted relative to the header),
+    // and frees the whole upper rail for anchored cards. It grows upward.
     pagePanelEl.style.position = 'fixed';
     pagePanelEl.style.left = rb.left + 'px';
     pagePanelEl.style.width = rb.width + 'px';
-    pagePanelEl.style.top = headerBottom() + 'px';
+    pagePanelEl.style.top = '';
+    pagePanelEl.style.bottom = '16px';
     pagePanelEl.style.zIndex = '23';
     if (pageListEl) {
       const editingPage = editingId != null && pageFor(currentSectionKey).some(n => n.id === editingId);
@@ -982,6 +1002,7 @@ function layoutNarrow() {
     pagePanelEl.style.left = '';
     pagePanelEl.style.width = '';
     pagePanelEl.style.top = '';
+    pagePanelEl.style.bottom = '';
     pagePanelEl.style.zIndex = '';
   }
   if (pageListEl) {
@@ -1012,61 +1033,71 @@ function layoutNarrow() {
   });
 }
 
+// The visible band for anchored cards: from just under the sticky header down
+// to the top of the bottom-pinned page panel (or the viewport edge if it isn't
+// pinned). Both off-screen counters and scroll-into-view share these bounds.
+function railBounds() {
+  const top = headerBottom();
+  const fixedPanel = !narrow && pagePanelEl && pagePanelEl.style.position === 'fixed';
+  const bottom = fixedPanel ? pagePanelEl!.getBoundingClientRect().top - 8 : window.innerHeight;
+  return { top, bottom };
+}
+
 function ensureVisible(id: string) {
   const el = cardRefs[id];
   if (!el || el.style.display === 'none') return;
-  const topGuard = narrow ? 78 : (pagePanelEl ? pagePanelEl.getBoundingClientRect().bottom + 12 : headerBottom());
-  const vh = window.innerHeight;
+  const { top, bottom } = railBounds();
+  const topGuard = narrow ? 78 : top;
+  const botGuard = (narrow ? window.innerHeight : bottom) - 12;
   const r = el.getBoundingClientRect();
   let delta = 0;
   if (r.top < topGuard) delta = r.top - topGuard;
-  else if (r.bottom > vh - 12) delta = Math.min(r.top - topGuard, r.bottom - (vh - 12));
+  else if (r.bottom > botGuard) delta = Math.min(r.top - topGuard, r.bottom - botGuard);
   if (Math.abs(delta) > 1) window.scrollBy({ top: delta, behavior: 'smooth' });
 }
 
 function offscreenSets() {
-  const panelBottom = pagePanelEl ? pagePanelEl.getBoundingClientRect().bottom : headerBottom();
-  const vh = window.innerHeight;
+  const { top, bottom } = railBounds();
   const above: HTMLElement[] = [], below: HTMLElement[] = [];
   if (currentSectionKey) anchoredFor(currentSectionKey).forEach(n => {
     const el = cardRefs[n.id];
     if (!el || el.style.display === 'none') return;
     const r = el.getBoundingClientRect();
-    if (r.bottom <= panelBottom + 2) above.push(el);
-    else if (r.top >= vh - 4) below.push(el);
+    if (r.bottom <= top + 2) above.push(el);
+    else if (r.top >= bottom - 4) below.push(el);
   });
-  return { above, below, panelBottom, vh };
+  return { above, below, top, bottom };
 }
 
 function updateOffscreen() {
   if (narrow || !railEl || !aboveEl || !belowEl) return;
   const rb = railEl.getBoundingClientRect();
-  const { above, below, panelBottom, vh } = offscreenSets();
+  const { above, below, top, bottom } = offscreenSets();
   const cx = rb.left + rb.width / 2;
   if (above.length) {
     aboveEl.style.display = 'flex';
     aboveEl.title = above.length + ' note' + (above.length > 1 ? 's' : '') + ' above';
     aboveEl.style.left = cx + 'px';
-    aboveEl.style.top = (panelBottom + 12) + 'px';
+    aboveEl.style.top = (top + 4) + 'px';
   } else aboveEl.style.display = 'none';
   if (below.length) {
     belowEl.style.display = 'flex';
     belowEl.title = below.length + ' note' + (below.length > 1 ? 's' : '') + ' below';
     belowEl.style.left = cx + 'px';
-    belowEl.style.top = (vh - 46) + 'px';
+    belowEl.style.top = (bottom - 38) + 'px';   // 34px tall → ~4px off its edge
   } else belowEl.style.display = 'none';
 }
 
 function jumpUp() {
-  const { above, panelBottom } = offscreenSets();
+  const { above, top } = offscreenSets();
   if (!above.length) return;
   const el = above[above.length - 1];
-  window.scrollBy({ top: el.getBoundingClientRect().top - (panelBottom + 16), behavior: 'smooth' });
+  window.scrollBy({ top: el.getBoundingClientRect().top - (top + 16), behavior: 'smooth' });
 }
 function jumpDown() {
-  const { below, panelBottom } = offscreenSets();
+  const { below, top } = offscreenSets();
   if (!below.length) return;
-  window.scrollBy({ top: below[0].getBoundingClientRect().top - (panelBottom + 16), behavior: 'smooth' });
+  window.scrollBy({ top: below[0].getBoundingClientRect().top - (top + 16), behavior: 'smooth' });
 }
 
 // ---- note state transitions -------------------------------------------------
@@ -1177,7 +1208,7 @@ function showSelectionPopup(rect: DOMRect) {
   popupEl = document.createElement('div');
   popupEl.className = 'ann-popup';
   popupEl.innerHTML =
-    `<button type="button" data-pop="note">✎ Note</button>`
+    `<button type="button" data-pop="note"><span class="ann-ico">✎</span> Note</button>`
     + `<span class="ann-popup-sep"></span>`
     + `<button type="button" data-pop="hl">Highlight</button>`;
   document.body.appendChild(popupEl);
@@ -1240,8 +1271,8 @@ function showMarkMenu(id: string, el: HTMLElement) {
   markMenuEl = document.createElement('div');
   markMenuEl.className = 'ann-mark-menu';
   markMenuEl.innerHTML =
-    `<button type="button" data-mm="note">✎ Note</button>`
-    + `<button type="button" data-mm="remove" class="ann-mm-remove">✕ Remove</button>`;
+    `<button type="button" data-mm="note"><span class="ann-ico">✎</span> Note</button>`
+    + `<button type="button" data-mm="remove" class="ann-mm-remove"><span class="ann-ico">✕</span> Remove</button>`;
   document.body.appendChild(markMenuEl);
   const r = el.getBoundingClientRect();
   markMenuEl.style.left = (r.left + r.width / 2) + 'px';
@@ -1262,23 +1293,34 @@ function onBodyMove(e: MouseEvent) {
   if (!block) return;
   if (hideFabTimer) { clearTimeout(hideFabTimer); hideFabTimer = null; }
   if (block === paraFabBlock && paraFabEl && paraFabEl.style.display !== 'none') return;
-  showFabFor(block);
+  // Place the fab next to where the cursor entered the block (clamped to the
+  // block) so it's a short hop away wherever you are in a long paragraph —
+  // then hold it still (the guard above) so it isn't a moving target.
+  showFabFor(block, e.clientY);
 }
 function onBodyLeave() { scheduleHideFab(); }
 function scheduleHideFab() {
   if (hideFabTimer) clearTimeout(hideFabTimer);
-  hideFabTimer = setTimeout(hideFab, 220);
+  // Generous: the fab sits across a gap from the text, so the trip from "stop
+  // hovering the block" to "land on the button" needs slack.
+  hideFabTimer = setTimeout(hideFab, 360);
 }
 function hideFab() {
   if (hideFabTimer) { clearTimeout(hideFabTimer); hideFabTimer = null; }
   paraFabBlock = null;
   if (paraFabEl) paraFabEl.style.display = 'none';
 }
-function showFabFor(block: HTMLElement) {
+// SVG pencil — text glyphs (✎) render small and sit visually high; an SVG
+// centers cleanly at any size.
+const FAB_ICON =
+  `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor"`
+  + ` stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">`
+  + `<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+function showFabFor(block: HTMLElement, cursorY?: number) {
   if (!paraFabEl) {
     paraFabEl = document.createElement('div');
     paraFabEl.className = 'ann-para-fab';
-    paraFabEl.innerHTML = `<button type="button" title="Add a note on this block">✎</button>`;
+    paraFabEl.innerHTML = `<button type="button" title="Add a note on this block">${FAB_ICON}</button>`;
     document.body.appendChild(paraFabEl);
     paraFabEl.addEventListener('mouseenter', () => { if (hideFabTimer) { clearTimeout(hideFabTimer); hideFabTimer = null; } });
     paraFabEl.addEventListener('mouseleave', scheduleHideFab);
@@ -1289,9 +1331,17 @@ function showFabFor(block: HTMLElement) {
   }
   paraFabBlock = block;
   const r = block.getBoundingClientRect();
+  // The wrapper carries transparent padding (see CSS) that enlarges the hover
+  // catch area and bridges the gap from the text; offset position by it so the
+  // visible button still lands where we compute.
+  const PAD = 12, BTN = 42;
+  const btnLeft = Math.min(r.right + 8, window.innerWidth - BTN - 10);
+  const btnTop = typeof cursorY === 'number'
+    ? Math.max(r.top, Math.min(cursorY - BTN / 2, r.bottom - BTN))
+    : r.top;
   paraFabEl.style.display = 'flex';
-  paraFabEl.style.left = Math.min(r.right + 12, window.innerWidth - 48) + 'px';
-  paraFabEl.style.top = r.top + 'px';
+  paraFabEl.style.left = (btnLeft - PAD) + 'px';
+  paraFabEl.style.top = (btnTop - PAD) + 'px';
 }
 function addParaNote(block: HTMLElement) {
   if (!bodyEl || !currentSectionKey) return;

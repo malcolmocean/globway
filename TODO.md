@@ -52,17 +52,28 @@
 
 - [ ] kb etc
   - [ ] hotkeys for all major actions, switch focus between main text and sidebar, arrow keys/hjkl for sidebar section selection, left/right in the main bar should prolly go to next section. 
-  - [ ] relatedly, clicking on a link in the left sidebar should automatically focus the main text body, or this should at least be an option
+- [ ] relatedly, clicking on a link in the left sidebar should automatically focus the main text body, or this should at least be an option -- this can be done before kb stuff, should be basically trivial. maybe annoying if we want to establish user settings. I guess do this after the notes interface for a separate rp
 - [ ] incremental reading stuff
   - I'm not sure I understand "actual" incremental reading, but probably something which surfaces old notes (your own notes and highlights) at some intervals
 - [ ] font options, some slightly ricier fonts, variously nice and clean
 - [ ] notes interface
   - [ ] dark mode colors for highlight broken
-  - [ ] ui sucks in general, prolly just have claude design mess around etc
-  - [ ] prolly notes should appear on the side on desktop, not sure on mobile. 
-  - [ ] support markdown in notes
-  - [ ] C-enter in the text field to submit
+  - [~] ui sucks in general, prolly just have claude design mess around etc
+    - ongoing "rice" pass: paragraph-note outline/tint, fab icon (svg pencil) +
+      bigger hover target, popup icon sizing, z-index fix so cards scroll under
+      the header, page notes pinned to the bottom of the rail
+  - [x] prolly notes should appear on the side on desktop, not sure on mobile.
+    - anchored cards in a right-hand side rail on wide screens; stack inline on mobile
+  - [x] support markdown in notes
+    - full GFM via `marked` + DOMPurify sanitize (tables, task lists, code, etc.)
+  - [x] C-enter in the text field to submit (⌘/Ctrl+Enter; Esc cancels)
   - [ ] really should have some nice interface for kb navigation for writing notes, but this is maybe for later or something
 	- [ ] could just be like, you can jump focus by paragraph, and then can do a highlight + note on the paragraph. and then some way to jump to existing notes, or jump between each of the notes + page level note. likely shouldn't be modal, not sure what the binding should be.
 	- [ ] again prolly should wait until more stuff in place for hotkeys in general
   - [ ] a way to basically explore all notes, like some interface to see where I have notes and sort of scroll through them, maybe showing the surrounding context, or at least just linking easily to the relevant page etc.
+	- show enough context per entry to recognize it (quoted anchor text + a snippet
+	  around it), or at minimum link straight to the section (ideally scroll to /
+	  flash the anchor on arrival).
+	- grouping/sorting: by section order, by recency; filter highlights vs notes vs
+	  page notes; maybe starred-only. the "see everything I've marked up" home that
+	  complements the per-section rail.

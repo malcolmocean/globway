@@ -13,9 +13,12 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
-    "astro": "^4.15.0"
+    "astro": "^4.15.0",
+    "dompurify": "^3.4.11",
+    "marked": "^18.0.5"
   },
   "devDependencies": {
+    "@types/dompurify": "^3.0.5",
     "markdown-it": "^14.1.0",
     "node-html-parser": "^6.1.13",
     "playwright": "^1.61.1",
