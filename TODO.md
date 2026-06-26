@@ -57,6 +57,9 @@
 - [ ] incremental reading stuff
   - I'm not sure I understand "actual" incremental reading, but probably something which surfaces old notes (your own notes and highlights) at some intervals
 - [ ] font options, some slightly ricier fonts, variously nice and clean
+- [ ] section title wraps poorly — the big serif h1 stacks into a tall narrow
+  column next to the read/star/hide/.md controls. fix the wrapping / sizing /
+  layout of the section header (not caused by the notes work).
 - [ ] notes interface
   - [x] dark mode colors for highlight broken
   - [~] ui sucks in general, prolly just have claude design mess around etc
