@@ -337,7 +337,7 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
    reflowing the prose; the outline rides outline-offset to sit on that edge. */
 .para-anchor { position: relative; cursor: pointer;
   outline: 2px solid var(--para-edge); outline-offset: 4px; border-radius: 1px; }
-.para-anchor::after { content: ''; position: absolute; inset: -4px; z-index: -1;
+.para-anchor::after { content: ''; position: absolute; inset: -3px -4px; z-index: -1;
   background: var(--para); border-radius: 6px; pointer-events: none; }
 .para-anchor.is-active { outline-width: 3px; }
 
