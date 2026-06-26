@@ -68,6 +68,9 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .sidebar .depth-4 > .row { padding-left: 4.45rem; }
 .sidebar .depth-5 > .row { padding-left: 5.25rem; }
 .main { padding: 2.2rem clamp(1rem, 4vw, 3rem); min-width: 0; }
+/* <main> is focused programmatically after a sidebar nav (tabindex=-1, never in
+   the tab order) — no focus ring for that. */
+.main:focus { outline: none; }
 .content { max-width: var(--maxw); margin: 0 auto; }
 
 /* mobile drawer chrome — hidden on desktop */

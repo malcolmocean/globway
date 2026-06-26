@@ -766,12 +766,21 @@ function highlightCurrent() {
 // while per-page work re-runs on every `astro:page-load`. Per-page listeners are
 // bound to a fresh AbortController each navigation so they don't accumulate.
 let pageAbort: AbortController | null = null;
+// Set when a sidebar TOC link is clicked, consumed on the next astro:page-load:
+// clicking a section in the sidebar should drop focus into the article so reading
+// / keyboard scrolling starts in the text, not back in the sidebar you just left.
+let focusMainOnLoad = false;
 
 function once() {
   buildSidebarTree();  // populate the persistent sidebar TOC from toc.json
   wireControls();   // delegated on document — persists
   wireAuth();       // AuthBar lives in the persistent sidebar
   wireNav();        // toggle/backdrop/sidebar persist; keydown on document
+  // Delegated on the persistent sidebar; only navigable TOC rows carry
+  // data-row-key (boundary spans / brand / pills don't qualify).
+  document.querySelector('.sidebar')?.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('a.row[data-row-key]')) focusMainOnLoad = true;
+  });
   registerSW();
   document.querySelector('.sidebar')?.addEventListener('scroll', onSidebarScroll, { passive: true });
   window.addEventListener('resize', () => { computeStickyTops(); updateStickyShadows(); });
@@ -799,6 +808,12 @@ function setupPage() {
   computeStickyTops();
   scrollSidebarToCurrent();
   updateStickyShadows();
+  if (focusMainOnLoad) {
+    focusMainOnLoad = false;
+    // preventScroll: scroll position is already restored/reset elsewhere; we only
+    // want the focus move, not a jump to the top of <main>.
+    document.querySelector<HTMLElement>('main.main')?.focus({ preventScroll: true });
+  }
 }
 
 let booted = false;
