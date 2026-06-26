@@ -840,6 +840,7 @@ function anchorLabel(n: Annotation): string {
 // ---- render: rail contents --------------------------------------------------
 function refresh() {
   if (!currentContainer || !currentSectionKey || !railEl) return;
+  gcEmptyNotes();   // drop empty notes abandoned via switch / reload (not the one being edited)
   renderHighlights(currentContainer, currentSectionKey);
   renderParas(currentContainer, currentSectionKey);
   renderRail();
@@ -1273,6 +1274,31 @@ function removeNote(id: string) {
   removeMarkMenu();
   deleteAnnotation(id);
   refresh();
+}
+
+// A note row is created the instant you open an editor (with body=''), so an
+// editor that's opened and then abandoned WITHOUT typing — by clicking another
+// note, or just by reloading / navigating away — would otherwise linger as a
+// meaningless empty note (an empty card that isn't even a text field until you
+// click edit). Garbage-collect those: a note whose committed body is empty, that
+// isn't being edited right now and has no autosaved draft, is reverted (highlight
+// → bare highlight, keeping the mark) or removed (para / page note). Data-only;
+// the surrounding refresh() rebuilds marks/outlines from the pruned set.
+function gcEmptyNotes() {
+  if (!currentSectionKey) return;
+  for (const n of forSection(currentSectionKey)) {
+    if (n.id === editingId) continue;
+    if (n.body == null || n.body.trim()) continue;   // bare highlight / real content
+    if (hasDraft(n)) continue;                        // unsaved text in flight
+    clearDraft(n.id);
+    if (n.kind === 'highlight') {
+      updateAnnotation(n.id, { body: null });
+    } else {
+      delete anchorEl[n.id]; delete cardRefs[n.id];
+      if (activeId === n.id) activeId = null;
+      deleteAnnotation(n.id);
+    }
+  }
 }
 function addPageNote() {
   if (!currentSectionKey) return;
