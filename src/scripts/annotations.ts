@@ -279,30 +279,27 @@ function renderHighlights(container: Element, sectionKey: string) {
   const currentHash = sectionHashes[resolveKey(sectionKey)];
   const updates: { id: string; changes: Partial<Annotation> }[] = [];
 
+  // One path for every highlight regardless of whether the hash still matches:
+  // anchorHighlight already handles exact/scored/fuzzy internally, and routing all
+  // of them through here means healing runs even on an unchanged section (which is
+  // exactly where legacy first-occurrence context needs correcting).
   for (const ann of anns) {
     delete anchorEl[ann.id];
-    if (currentHash && ann.section_hash === currentHash && !ann.orphaned) {
-      const result = anchorHighlight(ann, container);
-      if (result) {
-        const mark = wrapRange(result.range, ann);
-        if (mark) anchorEl[ann.id] = mark;
-        continue;
-      }
-    }
-
     const result = anchorHighlight(ann, container);
     if (result) {
+      // Heal stored context toward where it actually resolved — computed *before*
+      // wrapRange mutates the DOM and invalidates result.range.
+      const ctx = anchorContextFromRange(container, result.range);
       const mark = wrapRange(result.range, ann);
       if (mark) anchorEl[ann.id] = mark;
-      const changes: Partial<Annotation> = { section_hash: currentHash, orphaned: false };
+      const changes: Partial<Annotation> = {};
+      if (currentHash && ann.section_hash !== currentHash) changes.section_hash = currentHash;
+      if (ann.orphaned) changes.orphaned = false;
       if (result.updated) Object.assign(changes, result.updated);
-      if (ann.orphaned || ann.section_hash !== currentHash || result.updated) {
-        updates.push({ id: ann.id, changes });
-      }
-    } else {
-      if (!ann.orphaned) {
-        updates.push({ id: ann.id, changes: { orphaned: true } });
-      }
+      healAnchor(ann, ctx, changes);
+      if (Object.keys(changes).length) updates.push({ id: ann.id, changes });
+    } else if (!ann.orphaned) {
+      updates.push({ id: ann.id, changes: { orphaned: true } });
     }
   }
 
@@ -442,7 +439,8 @@ function renderParas(container: Element, sectionKey: string) {
       anchorEl[ann.id] = block;
       const changes: Partial<Annotation> = { section_hash: currentHash, orphaned: false };
       if (result && result.updated) Object.assign(changes, result.updated);
-      if (ann.orphaned || ann.section_hash !== currentHash || (result && result.updated)) {
+      const healed = healAnchor(ann, getBlockContext(container, block), changes, true);
+      if (ann.orphaned || ann.section_hash !== currentHash || (result && result.updated) || healed) {
         updates.push({ id: ann.id, changes });
       }
     } else if (!ann.orphaned) {
@@ -471,6 +469,60 @@ function normalizedOffsetAt(container: Element, endNode: Node, endOffset: number
   pre.selectNodeContents(container);
   try { pre.setEnd(endNode, endOffset); } catch { return 0; }
   return pre.toString().normalize('NFC').replace(/\s+/g, ' ').replace(/^ /, '').length;
+}
+
+type AnchorContext = { quote: string; prefix: string; suffix: string; text_position: number };
+
+// Recompute the stored anchor fields from a resolved DOM range. Shared by
+// selection capture and by the heal-on-re-anchor pass (which rewrites legacy
+// first-occurrence context toward where a note actually resolved, so old data
+// self-corrects over time). knownQuote lets the caller supply the trimmed
+// selection string instead of re-deriving it from the range.
+function anchorContextFromRange(container: Element, range: Range, knownQuote?: string): AnchorContext | null {
+  const quote = normalizePlaintext(knownQuote ?? range.toString());
+  if (!quote) return null;
+  const plain = extractPlaintext(container);
+  let idx = normalizedOffsetAt(container, range.startContainer, range.startOffset);
+  if (plain.slice(idx, idx + quote.length) !== quote) {
+    const near = plain.indexOf(quote, Math.max(0, idx - 2));
+    idx = near >= 0 ? near : plain.indexOf(quote);
+  }
+  if (idx < 0) return null;
+  const prefix = plain.slice(Math.max(0, idx - 32), idx);
+  const suffix = plain.slice(idx + quote.length, Math.min(plain.length, idx + quote.length + 32));
+  return { quote, prefix, suffix, text_position: idx };
+}
+
+// Heal-on-re-anchor: each time a note successfully resolves, rewrite its stored
+// context to match where it actually landed, so anchors stay fresh as content
+// evolves and legacy/stale data self-corrects over time.
+//
+// What it can and can't do:
+//   - Helps a UNIQUE-quote note whose context went stale (edited surroundings,
+//     or legacy bad data): the quote still resolves it unambiguously, then we
+//     refresh prefix/suffix/position so the NEXT recovery is sturdier.
+//   - Helps paragraph notes track edits: their quote IS the block text, so we
+//     heal the quote too (healQuote) — after Mark tweaks a paragraph the stored
+//     quote follows it and the fast exact-block path keeps working.
+//   - Cannot resurrect a REPEATED-word note whose disambiguating context is gone:
+//     with nothing to tell the copies apart it resolves to (and then heals
+//     toward) the first occurrence. No ground truth exists to do better; we
+//     accept "stably wrong" over "randomly wrong".
+//
+// Cost: an extra plaintext walk per resolved note per render. Annotation counts
+// per section are small, so this is fine; the guard `if (Object.keys(changes))`
+// in the callers means healthy notes write/sync nothing (no churn).
+//
+// Returns whether anything changed (so callers know to persist). quote is only
+// healed for paragraph notes; for highlights the quote is authoritative.
+function healAnchor(ann: Annotation, ctx: AnchorContext | null, changes: Partial<Annotation>, healQuote = false): boolean {
+  if (!ctx) return false;
+  let changed = false;
+  if (healQuote && ctx.quote !== ann.quote) { changes.quote = ctx.quote; changed = true; }
+  if (ctx.prefix !== ann.prefix) { changes.prefix = ctx.prefix; changed = true; }
+  if (ctx.suffix !== ann.suffix) { changes.suffix = ctx.suffix; changed = true; }
+  if (ctx.text_position !== ann.text_position) { changes.text_position = ctx.text_position; changed = true; }
+  return changed;
 }
 
 // Whole-block selector context, mirroring getSelectionContext but for a tagged
@@ -519,19 +571,9 @@ function getSelectionContext(container: Element): {
   const quote = sel.toString().trim();
   if (!quote || quote.length < 2) return null;
 
-  const plain = extractPlaintext(container);
-  const normalizedQuote = normalizePlaintext(quote);
-  // The real selection offset — not plain.indexOf(quote), which always snaps to
-  // the first occurrence and anchors repeated words like "with" to the wrong copy.
-  let idx = normalizedOffsetAt(container, range.startContainer, range.startOffset);
-  if (plain.slice(idx, idx + normalizedQuote.length) !== normalizedQuote) {
-    const near = plain.indexOf(normalizedQuote, Math.max(0, idx - 2));
-    idx = near >= 0 ? near : plain.indexOf(normalizedQuote);
-  }
-  if (idx < 0) return null;
-  const prefix = plain.slice(Math.max(0, idx - 32), idx);
-  const suffix = plain.slice(idx + normalizedQuote.length, Math.min(plain.length, idx + normalizedQuote.length + 32));
-  return { quote: normalizedQuote, prefix, suffix, text_position: idx };
+  // The real selection offset (not plain.indexOf(quote), which always snaps to
+  // the first occurrence and anchors repeated words like "with" to the wrong copy).
+  return anchorContextFromRange(container, range, quote);
 }
 
 // ---- sync -------------------------------------------------------------------
