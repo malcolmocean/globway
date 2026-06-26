@@ -37,6 +37,40 @@ function saveLocal(s: Record<string, Annotation>) {
 
 let annotations: Record<string, Annotation> = loadLocal();
 
+// ---- note drafts (local-only, never synced) --------------------------------
+// In-progress note text is autosaved here on every keystroke so closing the tab
+// / navigating / reloading mid-write never loses work. Kept in a *separate*
+// localStorage key from committed annotations (and out of Supabase): a draft is
+// unsaved-by-definition, and we don't want half-written notes racing across
+// devices. A draft is cleared once its note is saved, cancelled, or deleted.
+const DRAFT_KEY = 'globway:annotation-drafts';
+type Draft = { body: string; updated_at: string };
+let drafts: Record<string, Draft> = (() => {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}'); } catch { return {}; }
+})();
+function saveDrafts() { localStorage.setItem(DRAFT_KEY, JSON.stringify(drafts)); }
+function getDraft(id: string): string | null {
+  return Object.prototype.hasOwnProperty.call(drafts, id) ? drafts[id].body : null;
+}
+function setDraft(id: string, body: string) {
+  drafts[id] = { body, updated_at: new Date().toISOString() };
+  saveDrafts();
+}
+function clearDraft(id: string) {
+  if (Object.prototype.hasOwnProperty.call(drafts, id)) { delete drafts[id]; saveDrafts(); }
+}
+// A note carries unsaved work iff a draft exists that differs from its committed
+// body (an empty draft on an empty body is nothing; a draft equal to the saved
+// text isn't "unsaved").
+function hasDraft(n: Annotation): boolean {
+  const d = getDraft(n.id);
+  return d != null && d !== (n.body || '');
+}
+// What to *show* for a note: the draft if there's unsaved work, else committed.
+function displayBody(n: Annotation): string | null {
+  return hasDraft(n) ? getDraft(n.id) : n.body;
+}
+
 // noteId -> the DOM element an anchored note points at (first <mark> for a
 // highlight, the block element for a paragraph note). Rebuilt every render; the
 // rail reads these to position cards beside their targets.
@@ -794,7 +828,7 @@ function escapeHtml(s: string) {
 
 // ---- text helpers -----------------------------------------------------------
 function previewText(n: Annotation): string {
-  const first = (n.body || '').split('\n')[0].replace(/[*`#>[\]]/g, '').trim();
+  const first = (displayBody(n) || '').split('\n')[0].replace(/[*`#>[\]]/g, '').trim();
   return first || (n.kind === 'para' ? 'Add a note on this paragraph…' : 'Add a note…');
 }
 function anchorLabel(n: Annotation): string {
@@ -823,18 +857,23 @@ function buildCard(n: Annotation): HTMLElement {
   const anchored = (n.kind === 'para' || (n.kind === 'highlight' && n.body !== null)) && !n.orphaned;
   const active = activeId === n.id;
   const editing = editingId === n.id;
+  const draft = hasDraft(n);
   card.className = 'ann-card'
     + (n.kind === 'para' ? ' is-para' : n.kind === 'highlight' ? ' is-hl' : ' is-page')
     + (anchored && active ? ' is-active' : '')
-    + (editing ? ' is-editing' : '');
+    + (editing ? ' is-editing' : '')
+    + (draft ? ' has-draft' : '');
   card.dataset.cardId = n.id;
 
   const label = anchored ? `<div class="ann-anchor-label">${escapeHtml(anchorLabel(n))}</div>` : '';
 
   if (editing) {
+    // Seed the field from the draft if there's unsaved work, else the saved body.
+    const seed = draft ? (getDraft(n.id) || '') : (n.body || '');
     card.innerHTML = label
-      + `<textarea class="ann-textarea" data-editor="${n.id}" placeholder="Write a note… Markdown supported">${escapeHtml(n.body || '')}</textarea>`
-      + `<div class="ann-md-hint">Full Markdown — headings, lists, tables, \`code\`, [links](url) · ⌘/Ctrl+Enter to save · Esc to cancel</div>`
+      + `<textarea class="ann-textarea" data-editor="${n.id}" placeholder="Write a note… Markdown supported">${escapeHtml(seed)}</textarea>`
+      + `<div class="ann-md-hint">Full Markdown — headings, lists, tables, \`code\`, [links](url) · ⌘/Ctrl+Enter to save · Esc to cancel`
+      + `<span class="ann-draft-flag" data-draft-flag="${n.id}"${draft ? '' : ' hidden'}> · draft autosaved</span></div>`
       + `<div class="ann-editor-actions"><button type="button" class="ann-save" data-save="${n.id}">Save</button>`
       + `<button type="button" class="ann-cancel" data-cancel="${n.id}">Cancel</button></div>`;
     return card;
@@ -843,21 +882,23 @@ function buildCard(n: Annotation): HTMLElement {
   const orphan = n.orphaned
     ? `<div class="ann-detached">detached${n.quote ? ` · “${escapeHtml(n.quote.length > 80 ? n.quote.slice(0, 80) + '…' : n.quote)}”` : ''}</div>`
     : '';
+  const badge = draft ? `<span class="ann-draft-badge">unsaved draft</span>` : '';
   const tools = `<div class="ann-card-tools">`
     + `<button type="button" class="ann-icon-btn" data-edit="${n.id}" title="Edit">✎</button>`
     + `<button type="button" class="ann-icon-btn ann-del" data-delete="${n.id}" title="Delete">×</button></div>`;
-  card.innerHTML = label + orphan
-    + `<div class="ann-card-row"><div class="ann-md">${md(n.body)}</div>${tools}</div>`;
+  card.innerHTML = label + orphan + badge
+    + `<div class="ann-card-row"><div class="ann-md">${md(displayBody(n))}</div>${tools}</div>`;
   return card;
 }
 
 function buildPill(n: Annotation): HTMLElement {
   const pill = document.createElement('div');
-  pill.className = 'ann-pill' + (n.kind === 'para' ? ' is-para' : ' is-hl');
+  pill.className = 'ann-pill' + (n.kind === 'para' ? ' is-para' : ' is-hl') + (hasDraft(n) ? ' has-draft' : '');
   pill.dataset.activate = n.id;
   const glyph = n.kind === 'para' ? '¶' : '';
   pill.innerHTML = `<span class="ann-pill-dot">${glyph}</span>`
-    + `<span class="ann-pill-text">${escapeHtml(previewText(n))}</span>`;
+    + `<span class="ann-pill-text">${escapeHtml(previewText(n))}</span>`
+    + (hasDraft(n) ? `<span class="ann-draft-badge">draft</span>` : '');
   return pill;
 }
 
@@ -932,9 +973,18 @@ function focusEditor(id: string) {
   if (!ta) return;
   ta.focus();
   try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch {}
+  // Autosave a draft on every keystroke (synchronously to localStorage, so even
+  // an abrupt tab close keeps the latest text), and reveal the "draft autosaved"
+  // flag once the text diverges from what's committed.
+  ta.addEventListener('input', () => {
+    setDraft(id, ta.value);
+    const ann = annotations[id];
+    const flag = railEl?.querySelector<HTMLElement>(`[data-draft-flag="${id}"]`);
+    if (flag) flag.toggleAttribute('hidden', !(ann && ta.value !== (ann.body || '')));
+  });
   ta.addEventListener('keydown', (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); saveNote(id); }
-    else if (e.key === 'Escape') { e.preventDefault(); cancelNote(id); }
+    else if (e.key === 'Escape') { e.preventDefault(); requestCancel(id); }
   });
   if (!narrow && pageListEl && pageListEl.contains(ta)) {
     const card = cardRefs[id];
@@ -1119,6 +1169,7 @@ function saveNote(id: string) {
   const ann = annotations[id];
   editingId = null;
   isNew = false;
+  clearDraft(id);                       // committing (or clearing) ends the draft
   if (!val.trim()) {
     // Emptied a comment: a highlight reverts to a bare highlight; a page/para
     // note with no text is pointless, so it's removed.
@@ -1129,8 +1180,23 @@ function saveNote(id: string) {
   }
   refresh();
 }
+// Esc / Cancel: confirm before throwing away unsaved work. (Closing the tab or
+// navigating away does NOT discard — the draft is autosaved for next time;
+// only an explicit cancel destroys it, and only with a confirmation.)
+function requestCancel(id: string) {
+  const ta = railEl?.querySelector<HTMLTextAreaElement>(`[data-editor="${id}"]`);
+  const ann = annotations[id];
+  const val = ta ? ta.value : '';
+  const dirty = val.trim() !== (ann?.body || '').trim();
+  if (!dirty) { cancelNote(id); return; }
+  confirmDiscard().then(discard => {
+    if (discard) cancelNote(id);
+    else railEl?.querySelector<HTMLTextAreaElement>(`[data-editor="${id}"]`)?.focus();
+  });
+}
 function cancelNote(id: string) {
   const ann = annotations[id];
+  clearDraft(id);                       // explicit cancel discards the draft
   if (isNew) { isNew = false; removeNote(id); return; }
   // A highlight that was given a (still-empty) comment via the mark menu falls
   // back to a bare highlight on cancel rather than lingering as an empty card.
@@ -1140,6 +1206,54 @@ function cancelNote(id: string) {
   editingId = null;
   isNew = false;
   refresh();
+}
+
+// Accessible discard-confirm modal. Resolves true = discard, false = keep
+// editing. Traps Tab/Shift+Tab within the dialog, focuses the safe ("Keep
+// editing") action by default, closes on Esc / backdrop = keep, and restores
+// focus to whatever was focused before it opened.
+function confirmDiscard(): Promise<boolean> {
+  return new Promise(resolve => {
+    const prevFocus = document.activeElement as HTMLElement | null;
+    const overlay = document.createElement('div');
+    overlay.className = 'ann-modal-overlay';
+    overlay.innerHTML =
+      `<div class="ann-modal" role="dialog" aria-modal="true" aria-labelledby="ann-modal-title">`
+      + `<p class="ann-modal-title" id="ann-modal-title">Discard this note?</p>`
+      + `<p class="ann-modal-msg">Your unsaved changes will be lost.</p>`
+      + `<div class="ann-modal-actions">`
+      + `<button type="button" class="ann-modal-keep">Keep editing</button>`
+      + `<button type="button" class="ann-modal-discard">Discard</button>`
+      + `</div></div>`;
+    document.body.appendChild(overlay);
+    const keep = overlay.querySelector<HTMLButtonElement>('.ann-modal-keep')!;
+    const discard = overlay.querySelector<HTMLButtonElement>('.ann-modal-discard')!;
+    const focusables = [keep, discard];
+
+    const close = (v: boolean) => {
+      overlay.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      // restore focus unless the caller will move it (keep editing refocuses the field)
+      if (v && prevFocus && document.contains(prevFocus)) prevFocus.focus();
+      resolve(v);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(false); }
+      else if (e.key === 'Tab') {
+        // simple two-button focus trap
+        e.preventDefault();
+        const i = focusables.indexOf(document.activeElement as HTMLButtonElement);
+        const next = e.shiftKey ? (i <= 0 ? focusables.length - 1 : i - 1)
+                                : (i === focusables.length - 1 ? 0 : i + 1);
+        focusables[next].focus();
+      }
+    };
+    overlay.addEventListener('keydown', onKey, true);
+    keep.addEventListener('click', () => close(false));
+    discard.addEventListener('click', () => close(true));
+    overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(false); });
+    keep.focus();
+  });
 }
 function removeNote(id: string) {
   if (currentContainer) {
@@ -1153,6 +1267,7 @@ function removeNote(id: string) {
   }
   delete anchorEl[id];
   delete cardRefs[id];
+  clearDraft(id);
   if (activeId === id) activeId = null;
   if (editingId === id) editingId = null;
   removeMarkMenu();
@@ -1182,7 +1297,7 @@ function onRailClick(e: MouseEvent) {
   const sv = t.closest<HTMLElement>('[data-save]');
   if (sv) { saveNote(sv.dataset.save!); return; }
   const cn = t.closest<HTMLElement>('[data-cancel]');
-  if (cn) { cancelNote(cn.dataset.cancel!); return; }
+  if (cn) { requestCancel(cn.dataset.cancel!); return; }
   if (t.closest('[data-add-page]')) { e.stopPropagation(); addPageNote(); return; }
   if (t.closest('[data-toggle-page]')) {
     pageCollapsed = !pageCollapsed;

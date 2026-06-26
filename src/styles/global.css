@@ -428,6 +428,37 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
 .ann-save, .ann-cancel { font: inherit; font-size: 12.5px; cursor: pointer; border-radius: 8px; padding: .35rem .85rem; }
 .ann-save { font-weight: 600; border: 0; background: var(--accent); color: #fff; }
 .ann-cancel { border: 1px solid var(--line); background: var(--bg-elev); color: var(--text); }
+.ann-draft-flag { color: var(--star); font-weight: 600; }
+
+/* unsaved-draft markers on cards / pills */
+.ann-draft-badge { display: inline-flex; align-items: center; flex: none;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--star); background: var(--star-tint);
+  border: 1px solid color-mix(in srgb, var(--star) 45%, transparent);
+  border-radius: 999px; padding: 1px 6px; line-height: 1.5; }
+.ann-card .ann-draft-badge { margin-bottom: .4rem; }
+.ann-pill .ann-draft-badge { margin-left: .35rem; }
+.ann-card.has-draft { border-left-color: var(--star); }
+.ann-pill.has-draft { border-left-color: var(--star); }
+
+/* discard-confirm modal */
+.ann-modal-overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center;
+  justify-content: center; padding: 1rem; background: rgba(0,0,0,.4);
+  font-family: ui-sans-serif, system-ui, sans-serif; }
+.ann-modal { width: 100%; max-width: 22rem; background: var(--bg-elev); color: var(--text);
+  border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 14px 44px rgba(0,0,0,.32);
+  padding: 1.1rem 1.2rem 1rem; }
+.ann-modal-title { margin: 0 0 .3rem; font-size: 15px; font-weight: 700; }
+.ann-modal-msg { margin: 0 0 1rem; font-size: 13px; color: var(--muted); }
+.ann-modal-actions { display: flex; gap: .5rem; justify-content: flex-end; }
+.ann-modal-actions button { font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  border-radius: 8px; padding: .45rem .9rem; }
+.ann-modal-keep { border: 1px solid var(--line); background: var(--bg-elev); color: var(--text); }
+.ann-modal-keep:hover { border-color: var(--muted); }
+.ann-modal-keep:focus-visible, .ann-modal-discard:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; }
+.ann-modal-discard { border: 0; background: #c0392b; color: #fff; }
+.ann-modal-discard:hover { background: #a93226; }
 
 /* off-screen ↑/↓ counters (wide only) */
 .ann-offscreen { position: fixed; transform: translateX(-50%); width: 34px; height: 34px;
