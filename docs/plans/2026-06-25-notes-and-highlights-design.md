@@ -282,7 +282,42 @@ Chosen so later ideas don't force a rewrite:
   reads.
 - **Self-describing rows** (`title_snapshot`, `quote`) → notes survive section
   deletion and power an aggregate view independent of current content.
-- **`kind` discriminator** → adding future annotation kinds is additive.
+- **`kind` discriminator** → adding future annotation kinds is additive. (Already
+  exercised: a third kind, `para` — a note anchored to a whole block — was added
+  post-v1 reusing the existing anchor columns, i.e. **no new columns**; it needed
+  only a one-line additive migration loosening the `kind` CHECK constraint —
+  `supabase/migrations/20260625100000_annotations_para_kind.sql`.)
 - **Per-annotation hash + alias-follow** → robust to Mark's editing without
   per-feature special-casing.
 - Untouched: LLM section Q&A and practice timers are orthogonal and unaffected.
+
+## Addendum (2026-06-26): note body rendering
+
+Note bodies (`annotations.body`) are authored and stored as plain Markdown text
+and rendered to HTML **only at display time**, client-side. v1 shipped with a
+tiny hand-rolled regex renderer (bold/italic/code/link); that was replaced with
+full **GitHub-flavored Markdown** — tables, task lists, strikethrough, autolinks,
+fenced code, headings, blockquotes, etc.
+
+- **Renderer:** [`marked`](https://github.com/markedjs/marked) (`gfm: true`,
+  `breaks: true` — a lone newline becomes `<br>`, which suits short notes).
+- **Sanitizer:** [`DOMPurify`](https://github.com/cure53/DOMPurify) runs over
+  marked's output. This is the actual security boundary, not decoration: `marked`
+  passes through any literal HTML the author typed, and a note body is *untrusted*
+  input in the threat model — it round-trips through Supabase (so a hostile/buggy
+  synced row, an imported note, or a future *shared* note could carry a payload),
+  and RLS only isolates rows, it doesn't scrub their contents. DOMPurify strips
+  `<script>`, inline event handlers, and `javascript:`/`data:` URLs. A
+  `afterSanitizeAttributes` hook then forces every surviving `<a>` to
+  `target="_blank" rel="noopener noreferrer"`.
+- **Storage is unchanged** — we persist the raw Markdown, never the rendered
+  HTML, so the rendering/sanitizer choice stays swappable and notes remain
+  portable plain text. Both deps are bundled into the client island by Vite.
+
+Rejected: reusing the build-time `markdown-it` with `html:false` (no sanitizer
+needed). It's safe but ships no GFM task-lists out of the box and is heavier than
+`marked` + `DOMPurify` for the client bundle; defense-in-depth sanitizing also
+guards against a future renderer swap re-introducing raw-HTML passthrough.
+
+The matching display CSS lives under `.ann-md` in `src/styles/global.css`
+(spacing/overflow tuned for the narrow side-rail width).
