@@ -65,4 +65,4 @@
   - [ ] really should have some nice interface for kb navigation for writing notes, but this is maybe for later or something
 	- [ ] could just be like, you can jump focus by paragraph, and then can do a highlight + note on the paragraph. and then some way to jump to existing notes, or jump between each of the notes + page level note. likely shouldn't be modal, not sure what the binding should be.
 	- [ ] again prolly should wait until more stuff in place for hotkeys in general
-  
+  - [ ] a way to basically explore all notes, like some interface to see where I have notes and sort of scroll through them, maybe showing the surrounding context, or at least just linking easily to the relevant page etc.
