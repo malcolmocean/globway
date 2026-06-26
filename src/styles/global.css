@@ -334,12 +334,14 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
 
 /* paragraph-note outline. The tint + breathing room live on an ::after that's
    inset negative (bigger than the block) so it adds visual padding without ever
-   reflowing the prose; the outline rides outline-offset to sit on that edge. */
-.para-anchor { position: relative; cursor: pointer;
-  outline: 2px solid var(--para-edge); outline-offset: 4px; border-radius: 1px; }
+   reflowing the prose. The outline lives on that same ::after (not on the block
+   with an outline-offset), so the border hugs the tint exactly on every side —
+   no offset/inset mismatch, and the vertical inset can differ from horizontal. */
+.para-anchor { position: relative; cursor: pointer; }
 .para-anchor::after { content: ''; position: absolute; inset: -3px -4px; z-index: -1;
-  background: var(--para); border-radius: 6px; pointer-events: none; }
-.para-anchor.is-active { outline-width: 3px; }
+  background: var(--para); border-radius: 6px; pointer-events: none;
+  outline: 2px solid var(--para-edge); }
+.para-anchor.is-active::after { outline-width: 3px; }
 
 @media (min-width: 1200px) {
   .content { max-width: calc(var(--maxw) + var(--rail-w) + 2.5rem); }
