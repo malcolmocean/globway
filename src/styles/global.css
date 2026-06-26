@@ -275,8 +275,12 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
      instead of covering the top-bar controls; still below the floating popups
      (z 90) and the mobile drawer toggle (z 60). */
   position: sticky; top: 0; z-index: 40;
-  background: var(--bg); margin: 0 0 1.2rem;
-  padding: .5rem 0 .5rem; border-bottom: 1px solid var(--line);
+  /* Bleed the background a few px into the side gutters (negative margin balanced
+     by padding, so the header content doesn't shift) — otherwise a paragraph
+     note's tint/outline box, which sits ~6–7px wider than the text column on each
+     side, peeks out past the header's edges as the paragraph scrolls under it. */
+  background: var(--bg); margin: 0 -8px 1.2rem;
+  padding: .5rem 8px .5rem; border-bottom: 1px solid var(--line);
 }
 .section-head .crumbs { margin-bottom: .3rem; }
 .section-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
