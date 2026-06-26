@@ -66,16 +66,91 @@ function pageFor(key: string): Annotation[] {
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
+// ============================================================================
+// ANCHORING — design notes & tradeoffs
+// ----------------------------------------------------------------------------
+// An annotation is stored as text, not DOM coordinates, so it can survive the
+// section being re-rendered or lightly edited between versions. The persisted
+// fields are: quote (the selected text), prefix/suffix (≤32 chars of normalized
+// context on each side) and text_position (a normalized-plaintext offset). On
+// every render we re-derive a live DOM Range from those.
+//
+// Why a single normalized coordinate space (buildPlainMap):
+//   Everything — searching for the quote, computing the selection offset, and
+//   mapping an offset back to a DOM Range — must agree on what "offset N" means.
+//   The original code had TWO disagreeing notions of that: extractPlaintext
+//   collapsed whitespace across the whole container and trimmed, while
+//   rangeFromOffset re-collapsed each text node independently and never trimmed.
+//   They drifted by one char per inter-node/leading space, so highlights landed
+//   a few characters off. buildPlainMap is now the one source of truth: a single
+//   walk producing the plaintext AND a parallel pos[] mapping each char back to
+//   (node, rawOffset). extractPlaintext and rangeFromOffset both derive from it,
+//   so the two directions are exact inverses by construction.
+//
+// Why we measure the real selection offset (normalizedOffsetAt) instead of
+// plain.indexOf(quote): indexOf always returns the FIRST occurrence, so any
+// repeated word ("with", "the", …) anchored to the wrong copy. We instead count
+// the normalized characters before the selection's start boundary.
+//
+// Tradeoffs / known limits accepted here:
+//   - NFC length drift: we assume non-whitespace normalizes 1:1 with the raw DOM
+//     text (so a raw offset == a normalized offset for non-space chars). True for
+//     this content; a precomposed-vs-decomposed combining sequence split across
+//     nodes could misalign. The validate-and-fallback guard in
+//     anchorContextFromRange / getBlockContext catches gross mismatches.
+//   - Disambiguation is prefix/suffix-dominant (±10 each) with text_position as a
+//     near-weightless ±0.001 tiebreak. So position is advisory only and never the
+//     thing that picks an occurrence — which is also why the old wrong-position
+//     data never corrupted recovery (it was only ever a tiebreak, never a DOM
+//     offset).
+// ============================================================================
+
 // ---- plaintext normalization ------------------------------------------------
 function normalizePlaintext(text: string): string {
   return text.normalize('NFC').replace(/\s+/g, ' ').trim();
 }
 
-function extractPlaintext(container: Element): string {
+// The single source of truth for plaintext<->DOM coordinates. Walks the text
+// nodes once and produces (a) the normalized plaintext and (b) a parallel array
+// where pos[k] is the DOM position (node + raw offset) of plain[k]. Crucially the
+// whitespace collapse and leading/trailing trim happen *across the whole
+// container* (not per node), so plaintext offsets map back to the DOM exactly —
+// previously rangeFromOffset re-collapsed each node on its own and drifted out of
+// sync with extractPlaintext by one char per inter-node space / leading space,
+// which made highlights render a few characters off (or on the wrong word).
+type DomPos = { node: Text; offset: number };
+function buildPlainMap(container: Element): { plain: string; pos: DomPos[] } {
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  let text = '';
-  while (walker.nextNode()) text += walker.currentNode.textContent;
-  return normalizePlaintext(text);
+  let plain = '';
+  const pos: DomPos[] = [];
+  let prevWasSpace = true; // seeded true so leading whitespace is trimmed
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const tn = node as Text;
+    const raw = tn.textContent || '';
+    const norm = raw.normalize('NFC');
+    let ri = 0; // raw index, advanced in parallel (non-ws assumed 1:1 with NFC)
+    for (let ni = 0; ni < norm.length; ) {
+      if (/\s/.test(norm[ni])) {
+        const rawStart = ri;
+        ni++; ri++;
+        while (ni < norm.length && /\s/.test(norm[ni])) { ni++; ri++; }
+        while (ri < raw.length && /\s/.test(raw[ri])) ri++;
+        if (!prevWasSpace) { plain += ' '; pos.push({ node: tn, offset: rawStart }); prevWasSpace = true; }
+      } else {
+        plain += norm[ni];
+        pos.push({ node: tn, offset: ri });
+        ni++; ri++;
+        prevWasSpace = false;
+      }
+    }
+  }
+  while (plain.endsWith(' ')) { plain = plain.slice(0, -1); pos.pop(); }
+  return { plain, pos };
+}
+
+function extractPlaintext(container: Element): string {
+  return buildPlainMap(container).plain;
 }
 
 // ---- anchoring --------------------------------------------------------------
@@ -172,64 +247,15 @@ function fuzzyFind(haystack: string, needle: string): { start: number; length: n
 }
 
 function rangeFromOffset(container: Element, offset: number, length: number): AnchorResult {
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  let pos = 0;
-  let startNode: Text | null = null;
-  let startOff = 0;
-  let endNode: Text | null = null;
-  let endOff = 0;
-
-  while (walker.nextNode()) {
-    const node = walker.currentNode as Text;
-    const raw = node.textContent || '';
-    const normalized = raw.normalize('NFC');
-    const trimmedParts: { nStart: number; nLen: number; rStart: number; rLen: number }[] = [];
-
-    let ni = 0, ri = 0;
-    while (ni < normalized.length) {
-      if (/\s/.test(normalized[ni])) {
-        let wsEnd = ni + 1;
-        let rwsEnd = ri + 1;
-        while (wsEnd < normalized.length && /\s/.test(normalized[wsEnd])) { wsEnd++; rwsEnd++; }
-        while (rwsEnd < raw.length && /\s/.test(raw[rwsEnd])) rwsEnd++;
-        trimmedParts.push({ nStart: ni, nLen: 1, rStart: ri, rLen: rwsEnd - ri });
-        ni = wsEnd;
-        ri = rwsEnd;
-      } else {
-        trimmedParts.push({ nStart: ni, nLen: 1, rStart: ri, rLen: 1 });
-        ni++;
-        ri++;
-      }
-    }
-
-    const nodeNormLen = trimmedParts.length;
-    const prevPos = pos;
-
-    if (pos > 0 || prevPos > 0) {
-      // account for whitespace between nodes collapsed to a single space
-    }
-
-    for (let i = 0; i < trimmedParts.length; i++) {
-      const globalIdx = prevPos + i;
-      if (!startNode && globalIdx >= offset) {
-        startNode = node;
-        startOff = trimmedParts[i].rStart;
-      }
-      if (globalIdx >= offset + length - 1) {
-        endNode = node;
-        endOff = trimmedParts[i].rStart + trimmedParts[i].rLen;
-        break;
-      }
-    }
-    pos = prevPos + nodeNormLen;
-    if (endNode) break;
-  }
-
-  if (!startNode || !endNode) return null;
+  if (length <= 0) return null;
+  const { pos } = buildPlainMap(container);
+  if (offset < 0 || offset >= pos.length) return null;
+  const start = pos[offset];
+  const last = pos[Math.min(offset + length - 1, pos.length - 1)];
   try {
     const range = document.createRange();
-    range.setStart(startNode, startOff);
-    range.setEnd(endNode, Math.min(endOff, (endNode.textContent || '').length));
+    range.setStart(start.node, start.offset);
+    range.setEnd(last.node, Math.min(last.offset + 1, (last.node.textContent || '').length));
     return { range };
   } catch {
     return null;
@@ -433,6 +459,20 @@ function renderParas(container: Element, sectionKey: string) {
   }
 }
 
+// Normalized-plaintext offset of a DOM boundary (endNode/endOffset) within the
+// container — i.e. how many characters of extractPlaintext() precede that point.
+// This is the inverse of rangeFromOffset and the thing that makes anchoring land
+// on the occurrence the user actually picked rather than the first copy of a
+// repeated word. We measure the real text before the boundary and collapse it
+// the same way extractPlaintext does (NFC + whitespace-run collapse + leading
+// trim) so the two coordinate systems line up.
+function normalizedOffsetAt(container: Element, endNode: Node, endOffset: number): number {
+  const pre = document.createRange();
+  pre.selectNodeContents(container);
+  try { pre.setEnd(endNode, endOffset); } catch { return 0; }
+  return pre.toString().normalize('NFC').replace(/\s+/g, ' ').replace(/^ /, '').length;
+}
+
 // Whole-block selector context, mirroring getSelectionContext but for a tagged
 // block element — used when creating a paragraph note from the ¶ button.
 function getBlockContext(container: Element, block: Element): {
@@ -441,7 +481,13 @@ function getBlockContext(container: Element, block: Element): {
   const quote = normalizePlaintext(block.textContent || '');
   if (!quote) return null;
   const plain = extractPlaintext(container);
-  const idx = plain.indexOf(quote);
+  // Offset of *this* block, not the first block whose text happens to match.
+  let idx = normalizedOffsetAt(container, block.parentNode || container,
+    Array.prototype.indexOf.call((block.parentNode || container).childNodes, block));
+  if (plain.slice(idx, idx + quote.length) !== quote) {
+    const near = plain.indexOf(quote, Math.max(0, idx - 2));
+    idx = near >= 0 ? near : plain.indexOf(quote);
+  }
   if (idx < 0) return null;
   const prefix = plain.slice(Math.max(0, idx - 32), idx);
   const suffix = plain.slice(idx + quote.length, Math.min(plain.length, idx + quote.length + 32));
@@ -475,14 +521,16 @@ function getSelectionContext(container: Element): {
 
   const plain = extractPlaintext(container);
   const normalizedQuote = normalizePlaintext(quote);
-  const idx = plain.indexOf(normalizedQuote);
+  // The real selection offset — not plain.indexOf(quote), which always snaps to
+  // the first occurrence and anchors repeated words like "with" to the wrong copy.
+  let idx = normalizedOffsetAt(container, range.startContainer, range.startOffset);
+  if (plain.slice(idx, idx + normalizedQuote.length) !== normalizedQuote) {
+    const near = plain.indexOf(normalizedQuote, Math.max(0, idx - 2));
+    idx = near >= 0 ? near : plain.indexOf(normalizedQuote);
+  }
   if (idx < 0) return null;
-
-  const prefixStart = Math.max(0, idx - 32);
-  const prefix = plain.slice(prefixStart, idx);
-  const suffixEnd = Math.min(plain.length, idx + normalizedQuote.length + 32);
-  const suffix = plain.slice(idx + normalizedQuote.length, suffixEnd);
-
+  const prefix = plain.slice(Math.max(0, idx - 32), idx);
+  const suffix = plain.slice(idx + normalizedQuote.length, Math.min(plain.length, idx + normalizedQuote.length + 32));
   return { quote: normalizedQuote, prefix, suffix, text_position: idx };
 }
 
