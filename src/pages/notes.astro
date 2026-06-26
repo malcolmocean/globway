@@ -1,0 +1,30 @@
+---
+import Base from '../layouts/Base.astro';
+import { sections } from '../lib/content';
+// A lean section index (key -> title / reading order / depth) so the all-notes
+// view can group + order notes WITHOUT bundling the multi-MB content file. The
+// surrounding-paragraph text is fetched per section at runtime from the static
+// section page (see notes-view.ts), not embedded here.
+const meta: Record<string, { title: string; order: number; depth: number }> = {};
+sections.forEach((s, i) => {
+  meta[s.key] = { title: s.title, order: s.order ?? i, depth: s.depth };
+});
+const base = import.meta.env.BASE_URL;
+---
+<Base title="My notes">
+  <div class="content notes-view" data-notes-view>
+    <script type="application/json" data-notes-meta set:html={JSON.stringify(meta)}></script>
+    <header class="notes-head">
+      <h1>My notes</h1>
+      <p class="notes-sub" data-notes-count></p>
+      <p class="notes-intro">
+        Everything you've highlighted and noted, gathered in reading order with the
+        paragraph each note lives in. Edits sync back to the section.
+      </p>
+    </header>
+    <div class="notes-list" data-notes-list>
+      <p class="ann-empty">Loading your notes…</p>
+    </div>
+    <p class="notes-foot"><a href={base}>← back to the manual</a></p>
+  </div>
+</Base>
