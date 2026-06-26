@@ -52,13 +52,13 @@
 
 - [ ] kb etc
   - [ ] hotkeys for all major actions, switch focus between main text and sidebar, arrow keys/hjkl for sidebar section selection, left/right in the main bar should prolly go to next section. 
-- [x] relatedly, clicking on a link in the left sidebar should automatically focus the main text body, or this should at least be an option -- this can be done before kb stuff, should be basically trivial. maybe annoying if we want to establish user settings. I guess do this after the notes interface for a separate rp
+  - [x] relatedly, clicking on a link in the left sidebar should automatically focus the main text body, or this should at least be an option -- this can be done before kb stuff, should be basically trivial. maybe annoying if we want to establish user settings. I guess do this after the notes interface for a separate rp
   - done unconditionally (no settings yet): `<main tabindex=-1>` + focus on the next astro:page-load after a TOC row click
 - [ ] incremental reading stuff
   - I'm not sure I understand "actual" incremental reading, but probably something which surfaces old notes (your own notes and highlights) at some intervals
 - [ ] font options, some slightly ricier fonts, variously nice and clean
 - [ ] notes interface
-  - [ ] dark mode colors for highlight broken
+  - [x] dark mode colors for highlight broken
   - [~] ui sucks in general, prolly just have claude design mess around etc
     - ongoing "rice" pass: paragraph-note outline/tint, fab icon (svg pencil) +
       bigger hover target, popup icon sizing, z-index fix so cards scroll under
