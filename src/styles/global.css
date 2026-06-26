@@ -487,13 +487,18 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
 .ann-mark-menu button:hover { background: var(--bg); }
 .ann-mm-remove { color: #c0392b !important; }
 .ann-mm-remove:hover { background: color-mix(in srgb, #c0392b 12%, transparent) !important; }
-/* The transparent padding enlarges the (invisible) hover catch area and bridges
-   the gap between the text and the button, so the cursor doesn't fall out of
-   "hovering" on its way over. JS offsets the position by this padding. */
+/* The transparent padding on the outer wrapper enlarges the (invisible) hover
+   catch area and bridges the gap between the text and the menu, so the cursor
+   doesn't fall out of "hovering" on its way over. JS offsets position by it. */
 .ann-para-fab { align-items: center; justify-content: center; padding: 12px; }
-.ann-para-fab button { width: 42px; height: 42px; padding: 0; border-radius: 50%; border: 1px solid var(--line);
-  background: var(--bg-elev); color: var(--para-edge); cursor: pointer; line-height: 0;
-  box-shadow: 0 1px 2px rgba(0,0,0,.04); display: flex; align-items: center; justify-content: center; }
-.ann-para-fab button svg { display: block; }
-.ann-para-fab button:hover { border-color: var(--para-edge); background: color-mix(in srgb, var(--para-edge) 8%, var(--bg-elev)); }
+/* the visible affordance: a pill holding the highlight + note actions, stacked */
+.ann-fab-menu { display: flex; flex-direction: column; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--bg-elev); box-shadow: 0 2px 7px rgba(0,0,0,.08);
+  overflow: hidden; }
+.ann-fab-menu button { width: 42px; height: 38px; padding: 0; border: 0; line-height: 0;
+  background: transparent; color: var(--para-edge); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; }
+.ann-fab-menu button + button { border-top: 1px solid var(--line); }
+.ann-fab-menu button svg { display: block; }
+.ann-fab-menu button:hover { background: color-mix(in srgb, var(--para-edge) 12%, var(--bg-elev)); }
 

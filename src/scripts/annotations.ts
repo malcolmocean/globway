@@ -86,11 +86,16 @@ function forSection(key: string): Annotation[] {
     .filter(a => !a.deleted && resolveKey(a.section_key) === canon);
 }
 
-// Anchored notes: highlights that carry a comment + paragraph notes. Ordered by
+// Anchored *cards*: text highlights and paragraph marks that carry a comment.
+// A null body = a bare mark (text highlight or paragraph highlight) — it shows
+// in the prose (mark / block tint) but gets no rail card... unless it's the one
+// being edited right now (adding a comment to a mark keeps body=null until saved,
+// so cancel reverts to the bare mark) or it has an unsaved draft. Ordered by
 // position in the text (text_position), so the rail builds top-to-bottom.
 function anchoredFor(key: string): Annotation[] {
   return forSection(key)
-    .filter(a => (a.kind === 'para' || (a.kind === 'highlight' && a.body !== null)) && !a.orphaned)
+    .filter(a => (a.kind === 'para' || a.kind === 'highlight') && !a.orphaned
+      && (a.body !== null || a.id === editingId || hasDraft(a)))
     .sort((a, b) => (a.text_position ?? 0) - (b.text_position ?? 0));
 }
 
@@ -1171,13 +1176,15 @@ function saveNote(id: string) {
   editingId = null;
   isNew = false;
   clearDraft(id);                       // committing (or clearing) ends the draft
-  if (!val.trim()) {
-    // Emptied a comment: a highlight reverts to a bare highlight; a page/para
-    // note with no text is pointless, so it's removed.
-    if (ann && ann.kind === 'highlight') updateAnnotation(id, { body: null });
-    else { removeNote(id); return; }
-  } else {
+  if (val.trim()) {
     updateAnnotation(id, { body: val });
+  } else {
+    // Nothing typed: a bare mark (body===null — a text or paragraph highlight
+    // someone was adding a comment to) stays a bare mark; a highlight that had a
+    // comment drops back to bare; a brand-new / emptied para|page note is gone.
+    if (ann && ann.body === null) { /* bare mark — leave it as-is */ }
+    else if (ann && ann.kind === 'highlight') updateAnnotation(id, { body: null });
+    else { removeNote(id); return; }
   }
   refresh();
 }
@@ -1196,16 +1203,12 @@ function requestCancel(id: string) {
   });
 }
 function cancelNote(id: string) {
-  const ann = annotations[id];
   clearDraft(id);                       // explicit cancel discards the draft
   if (isNew) { isNew = false; removeNote(id); return; }
-  // A highlight that was given a (still-empty) comment via the mark menu falls
-  // back to a bare highlight on cancel rather than lingering as an empty card.
-  if (ann && ann.kind === 'highlight' && (ann.body === '' || (ann.body && !ann.body.trim()))) {
-    updateAnnotation(id, { body: null });
-  }
+  // Editing a pre-existing mark/note: cancel just drops the in-progress edits and
+  // closes. body is never mutated while editing, so a bare mark stays bare and a
+  // commented note keeps its committed text.
   editingId = null;
-  isNew = false;
   refresh();
 }
 
@@ -1392,7 +1395,14 @@ function onBodyClick(e: MouseEvent) {
   if (!block) { hideFab(); return; }
   if (currentSectionKey) {
     const para = forSection(currentSectionKey).find(n => n.kind === 'para' && anchorEl[n.id] === block);
-    if (para) { pendingScroll = para.id; setActive(para.id); return; }
+    if (para) {
+      e.stopPropagation();
+      // A bare paragraph highlight (no comment) opens the Note/Remove menu, just
+      // like a bare text highlight; a paragraph *note* opens its card.
+      if (para.body === null) showMarkMenu(para.id, block);
+      else { pendingScroll = para.id; setActive(para.id); }
+      return;
+    }
   }
   if (narrow) showFabFor(block);
 }
@@ -1422,7 +1432,9 @@ function showMarkMenu(id: string, el: HTMLElement) {
   markMenuEl.addEventListener('click', e => {
     const b = (e.target as HTMLElement).closest<HTMLElement>('[data-mm]');
     if (!b) return;
-    if (b.dataset.mm === 'note') { updateAnnotation(id, { body: '' }); removeMarkMenu(); openEdit(id); }
+    // Keep body=null while composing — openEdit surfaces the editor for the bare
+    // mark (see anchoredFor); cancelling/empty-saving leaves the mark intact.
+    if (b.dataset.mm === 'note') { removeMarkMenu(); openEdit(id); }
     else removeNote(id);
   });
 }
@@ -1451,35 +1463,58 @@ function hideFab() {
   paraFabBlock = null;
   if (paraFabEl) paraFabEl.style.display = 'none';
 }
-// SVG pencil — text glyphs (✎) render small and sit visually high; an SVG
-// centers cleanly at any size.
-const FAB_ICON =
+// SVG icons — text glyphs render small and sit visually high; SVGs center
+// cleanly at any size. Pencil = add a note; highlighter = mark the block.
+const FAB_PENCIL =
   `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor"`
   + ` stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">`
   + `<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+const FAB_MARKER =
+  `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor"`
+  + ` stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">`
+  + `<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>`;
+// Roughly the stacked height of the two fab buttons + gap + padding, used to keep
+// the fab clamped within a short block.
+const FAB_H = 96;
 function showFabFor(block: HTMLElement, cursorY?: number) {
   if (!paraFabEl) {
     paraFabEl = document.createElement('div');
     paraFabEl.className = 'ann-para-fab';
-    paraFabEl.innerHTML = `<button type="button" title="Add a note on this block">${FAB_ICON}</button>`;
+    paraFabEl.innerHTML =
+      `<div class="ann-fab-menu">`
+      + `<button type="button" data-fab="hl" title="Highlight this paragraph">${FAB_MARKER}</button>`
+      + `<button type="button" data-fab="note" title="Add a note on this paragraph">${FAB_PENCIL}</button>`
+      + `</div>`;
     document.body.appendChild(paraFabEl);
     paraFabEl.addEventListener('mouseenter', () => { if (hideFabTimer) { clearTimeout(hideFabTimer); hideFabTimer = null; } });
     paraFabEl.addEventListener('mouseleave', scheduleHideFab);
-    paraFabEl.querySelector('button')!.addEventListener('mousedown', e => {
+    paraFabEl.addEventListener('mousedown', e => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-fab]');
+      if (!b || !paraFabBlock) return;
       e.preventDefault();
-      if (paraFabBlock) addParaNote(paraFabBlock);
+      if (b.dataset.fab === 'hl') addParaHighlight(paraFabBlock);
+      else addParaNote(paraFabBlock);
     });
   }
   paraFabBlock = block;
   const r = block.getBoundingClientRect();
   // The wrapper carries transparent padding (see CSS) that enlarges the hover
   // catch area and bridges the gap from the text; offset position by it so the
-  // visible button still lands where we compute.
+  // visible buttons still land where we compute.
   const PAD = 12, BTN = 42;
-  const btnLeft = Math.min(r.right + 8, window.innerWidth - BTN - 10);
-  const btnTop = typeof cursorY === 'number'
-    ? Math.max(r.top, Math.min(cursorY - BTN / 2, r.bottom - BTN))
-    : r.top;
+  let btnLeft: number, btnTop: number;
+  if (narrow) {
+    // Narrow (esp. the 800–1200px band: sidebar is still a column, so the prose
+    // fills the width with no side gutter to sit in) — float over the block's
+    // top-right corner instead, where the pill's own background keeps it legible.
+    btnLeft = Math.min(r.right - BTN - 6, window.innerWidth - BTN - 10);
+    btnTop = r.top + 6;
+  } else {
+    btnLeft = Math.min(r.right + 8, window.innerWidth - BTN - 10);
+    btnTop = typeof cursorY === 'number'
+      ? Math.max(r.top, Math.min(cursorY - FAB_H / 2, Math.max(r.top, r.bottom - FAB_H)))
+      : r.top;
+  }
   paraFabEl.style.display = 'flex';
   paraFabEl.style.left = (btnLeft - PAD) + 'px';
   paraFabEl.style.top = (btnTop - PAD) + 'px';
@@ -1502,6 +1537,28 @@ function addParaNote(block: HTMLElement) {
   pendingFocus = ann.id;
   activeId = ann.id;
   editingId = ann.id;
+  refresh();
+}
+// Bare paragraph highlight: a `para` annotation with body=null (tint + outline,
+// no rail card) — the block-level analogue of a bare text highlight. Clicking
+// the marked block opens the Note/Remove menu. The marker button toggles it.
+function addParaHighlight(block: HTMLElement) {
+  if (!bodyEl || !currentSectionKey) return;
+  hideFab();
+  const existing = forSection(currentSectionKey).find(n => n.kind === 'para' && anchorEl[n.id] === block);
+  if (existing) {                       // already marked
+    if (existing.body === null) removeNote(existing.id);   // bare → toggle off
+    return;                             // a paragraph *note* is left untouched
+  }
+  const ctx = getBlockContext(bodyEl, block);
+  if (!ctx) return;
+  createAnnotation({
+    section_key: currentSectionKey,
+    kind: 'para',
+    quote: ctx.quote, prefix: ctx.prefix, suffix: ctx.suffix, text_position: ctx.text_position,
+    body: null,
+    title_snapshot: currentTitleSnapshot,
+  });
   refresh();
 }
 
