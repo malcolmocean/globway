@@ -6,6 +6,7 @@
 import { getSupabase, isConfigured } from '../lib/supabase';
 import tocData from '../data/toc.json';
 import { initAnnotations, pullAnnotations } from './annotations';
+import { initKeyboard, setupKeyboardPage } from './keyboard';
 
 type TocNode = { key: string; title: string; depth: number; children: TocNode[] };
 type Entry = { read?: boolean; starred?: boolean; hidden?: boolean; progress?: number; updated_at: string };
@@ -426,6 +427,21 @@ async function copyMd(btn: HTMLElement) {
   copyTimer = window.setTimeout(() => { btn.innerHTML = btn.dataset.label!; }, 1400);
 }
 
+// ---- keyboard host actions --------------------------------------------------
+// The keyboard layer's body bindings for r/*/b/m operate on the *current*
+// section; resolve its key from the article element and reuse toggle()/copyMd().
+function currentSectionKey(): string | null {
+  return document.querySelector<HTMLElement>('[data-section-key]')?.dataset.sectionKey || null;
+}
+function toggleCurrent(field: 'read' | 'starred' | 'hidden') {
+  const key = currentSectionKey();
+  if (key) toggle(key, field);
+}
+function copyMdCurrent() {
+  const btn = document.querySelector<HTMLElement>('[data-action="copy-md"]:not([hidden])');
+  if (btn) copyMd(btn);
+}
+
 // ---- deck presenter (/aux, /p3, /p8) ---------------------------------------
 // One shared presenter for any deck (a list of cards): fetch its JSON once, render
 // one card by ?p=<key> (or ?r=1 for a random card), step with prev/next/random.
@@ -766,21 +782,15 @@ function highlightCurrent() {
 // while per-page work re-runs on every `astro:page-load`. Per-page listeners are
 // bound to a fresh AbortController each navigation so they don't accumulate.
 let pageAbort: AbortController | null = null;
-// Set when a sidebar TOC link is clicked, consumed on the next astro:page-load:
-// clicking a section in the sidebar should drop focus into the article so reading
-// / keyboard scrolling starts in the text, not back in the sidebar you just left.
-let focusMainOnLoad = false;
 
 function once() {
   buildSidebarTree();  // populate the persistent sidebar TOC from toc.json
   wireControls();   // delegated on document — persists
   wireAuth();       // AuthBar lives in the persistent sidebar
   wireNav();        // toggle/backdrop/sidebar persist; keydown on document
-  // Delegated on the persistent sidebar; only navigable TOC rows carry
-  // data-row-key (boundary spans / brand / pills don't qualify).
-  document.querySelector('.sidebar')?.addEventListener('click', (e) => {
-    if ((e.target as HTMLElement).closest('a.row[data-row-key]')) focusMainOnLoad = true;
-  });
+  // Keyboard navigation: two listeners on persistent elements (document + sidebar),
+  // wired once. Body actions (r/*/b/m) drive the section state via these hosts.
+  initKeyboard({ toggle: toggleCurrent, copyMd: copyMdCurrent });
   registerSW();
   document.querySelector('.sidebar')?.addEventListener('scroll', onSidebarScroll, { passive: true });
   window.addEventListener('resize', () => { computeStickyTops(); updateStickyShadows(); });
@@ -808,12 +818,7 @@ function setupPage() {
   computeStickyTops();
   scrollSidebarToCurrent();
   updateStickyShadows();
-  if (focusMainOnLoad) {
-    focusMainOnLoad = false;
-    // preventScroll: scroll position is already restored/reset elsewhere; we only
-    // want the focus move, not a jump to the top of <main>.
-    document.querySelector<HTMLElement>('main.main')?.focus({ preventScroll: true });
-  }
+  setupKeyboardPage();   // drop focus off a clicked sidebar row; reseed roving tabindex
 }
 
 let booted = false;

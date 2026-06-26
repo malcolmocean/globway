@@ -68,9 +68,6 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .sidebar .depth-4 > .row { padding-left: 4.45rem; }
 .sidebar .depth-5 > .row { padding-left: 5.25rem; }
 .main { padding: 2.2rem clamp(1rem, 4vw, 3rem); min-width: 0; }
-/* <main> is focused programmatically after a sidebar nav (tabindex=-1, never in
-   the tab order) — no focus ring for that. */
-.main:focus { outline: none; }
 .content { max-width: var(--maxw); margin: 0 auto; }
 
 /* mobile drawer chrome — hidden on desktop */
@@ -505,4 +502,52 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
 .ann-fab-menu button + button { border-top: 1px solid var(--line); }
 .ann-fab-menu button svg { display: block; }
 .ann-fab-menu button:hover { background: color-mix(in srgb, var(--para-edge) 12%, var(--bg-elev)); }
+
+/* ---- keyboard navigation ---- */
+/* The article body's virtual paragraph cursor: a class on a tagged block, never
+   real DOM focus (so native scroll stays on <body> and the block isn't a tab
+   stop). A left bar on a ::before, inset negative so it never reflows the prose. */
+.kb-focus { position: relative; }
+.kb-focus::before {
+  content: ''; position: absolute; top: -2px; bottom: -2px; left: calc(-1rem + 5px); width: 3px;
+  background: var(--accent); border-radius: 2px; pointer-events: none;
+}
+/* List items are indented, so the shared offset lands on the bullet — pull the
+   bar back out (left) to clear the marker. One offset works at every width: the
+   left gutter never drops below the main padding for paragraphs, and the list
+   indent (hence bullet clearance) doesn't change with viewport. */
+li.kb-focus::before { left: calc(-1rem - 5px); }
+
+/* Sidebar rows take *real* focus (roving tabindex). Mark the focused row with a
+   background tint (on both :focus-visible from Tab and :focus from our
+   programmatic j/k/s moves) — no border. */
+.sidebar nav[data-toc] a.row:focus { outline: none; }
+.sidebar nav[data-toc] a.row:focus-visible,
+.sidebar nav[data-toc] a.row:focus {
+  background: color-mix(in srgb, var(--accent) 22%, var(--sidebar-bg));
+}
+
+/* keyboard-shortcuts help overlay (generated from the keymap table) */
+.kbd-help-overlay { position: fixed; inset: 0; z-index: 120; display: flex;
+  align-items: center; justify-content: center; padding: 1.5rem; outline: none;
+  background: rgba(0, 0, 0, .45); font-family: ui-sans-serif, system-ui, sans-serif; }
+.kbd-help { width: 100%; max-width: 46rem; max-height: 84vh; overflow-y: auto;
+  background: var(--bg-elev); color: var(--text); border: 1px solid var(--line);
+  border-radius: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, .34); padding: 1.1rem 1.3rem 1.4rem; }
+.kbd-help-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .7rem; }
+.kbd-help-head h2 { margin: 0; font-size: 1.05rem; }
+.kbd-close { font: inherit; font-size: 1.4rem; line-height: 1; cursor: pointer; border: 0;
+  background: transparent; color: var(--muted); width: 2rem; height: 2rem; border-radius: 8px; }
+.kbd-close:hover { background: var(--bg); color: var(--text); }
+.kbd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .1rem 1.6rem; }
+.kbd-group { break-inside: avoid; margin-bottom: .6rem; }
+.kbd-group h3 { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); margin: .5rem 0 .3rem; }
+.kbd-row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: .16rem 0; }
+.kbd-title { font-size: 13px; color: var(--text); }
+.kbd-keys { flex: none; display: inline-flex; align-items: baseline; }
+.kbd-or { color: var(--muted); margin: 0 .3rem; font-size: 11px; }
+.kbd-keys kbd { font-family: ui-monospace, Menlo, monospace; font-size: 11px; line-height: 1.5;
+  background: var(--bg); border: 1px solid var(--line); border-bottom-width: 2px;
+  border-radius: 5px; padding: 1px 5px; color: var(--text); }
 

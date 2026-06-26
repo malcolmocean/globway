@@ -1594,6 +1594,155 @@ function onDocDown(e: MouseEvent) {
   }
 }
 
+// ===========================================================================
+// KEYBOARD NAVIGATION SURFACE
+//
+// The body keyboard layer (keyboard.ts) drives the *same* annotation state these
+// functions live next to — there's no parallel controller. It owns two things on
+// our behalf: a purely-visual "virtual focus" cursor (a .kb-focus class on a
+// tagged block; no DOM focus, no tab stop) and the body action commands, which
+// resolve "live selection vs focused paragraph" then call the existing mouse
+// code paths (addHighlight / addParaHighlight / addParaNote / addPageNote).
+// ===========================================================================
+let kbCursor: HTMLElement | null = null;
+const KB_MIN_VISIBLE = 40; // px a block must show to count as "in the viewport"
+
+function kbBlocks(): HTMLElement[] {
+  return bodyEl ? Array.from(bodyEl.querySelectorAll<HTMLElement>('[data-block-id]')) : [];
+}
+function kbSetCursor(b: HTMLElement | null) {
+  if (kbCursor && kbCursor !== b) kbCursor.classList.remove('kb-focus');
+  kbCursor = b;
+  if (b) b.classList.add('kb-focus');
+}
+// On screen = visible below the sticky header and above the fold (any sliver).
+function kbOnScreen(b: HTMLElement): boolean {
+  const r = b.getBoundingClientRect();
+  return r.bottom > headerBottom() + 4 && r.top < window.innerHeight - 4;
+}
+// First block whose top is at/below the header and that shows more than a sliver;
+// failing that a single huge block straddling the whole viewport; else the first
+// block at/below the header; else the very first block.
+function kbSeed(): HTMLElement | null {
+  const list = kbBlocks();
+  if (!list.length) return null;
+  const hb = headerBottom();
+  const vh = window.innerHeight;
+  for (const b of list) {
+    const r = b.getBoundingClientRect();
+    if (r.top >= hb - 1 && Math.min(r.bottom, vh) - Math.max(r.top, hb) >= KB_MIN_VISIBLE) return b;
+  }
+  for (const b of list) {
+    const r = b.getBoundingClientRect();
+    if (r.top < hb && r.bottom > vh) return b;            // huge straddling block
+  }
+  for (const b of list) if (b.getBoundingClientRect().top >= hb - 1) return b;
+  return list[0];
+}
+// Scroll the *minimum* needed to reveal the cursor block — never when it's
+// already fully inside the visible band (header bottom → viewport bottom). A
+// block poking below the fold scrolls up just far enough to bring its bottom into
+// view; a block poking above scrolls down to bring its top under the header. The
+// cap is always "top under the header, no further", so a block taller than the
+// band lands top-aligned (and a block straddling the whole band doesn't move).
+function kbScrollToCursor() {
+  if (!kbCursor) return;
+  const r = kbCursor.getBoundingClientRect();
+  const top = headerBottom();
+  const bottom = window.innerHeight;
+  let delta = 0;
+  if (r.bottom > bottom && r.top > top) delta = Math.min(r.bottom - bottom, r.top - top);
+  else if (r.top < top && r.bottom < bottom) delta = r.top - top;
+  if (Math.abs(delta) > 1) window.scrollBy({ top: delta, behavior: 'smooth' });
+}
+// j/k. With no cursor (or one that's gone / scrolled off-screen) the first press
+// seeds from the viewport and does not move; subsequent presses step block to
+// block, scrolling only as far as needed to keep the focused block in view.
+export function kbFocusBlock(dir: 'next' | 'prev' | 'first-visible') {
+  const list = kbBlocks();
+  if (!list.length) return;
+  if (dir === 'first-visible' || !kbCursor || !kbCursor.isConnected || !kbOnScreen(kbCursor)) {
+    kbSetCursor(kbSeed());
+    kbScrollToCursor();
+    return;
+  }
+  const i = list.indexOf(kbCursor);
+  if (i < 0) { kbSetCursor(kbSeed()); kbScrollToCursor(); return; }
+  const ni = dir === 'next' ? i + 1 : i - 1;
+  if (ni < 0 || ni >= list.length) return;               // at an edge: stay put
+  kbSetCursor(list[ni]);
+  kbScrollToCursor();
+}
+
+// A live, non-collapsed selection inside the article body (h/n act on it).
+function kbLiveSelection(): boolean {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount || !sel.toString().trim()) return false;
+  return !!bodyEl && bodyEl.contains(sel.getRangeAt(0).commonAncestorContainer);
+}
+// h: highlight the live selection, else the focused paragraph (cursor stays put).
+export function kbHighlight() {
+  if (kbLiveSelection()) { addHighlight(false); return; }
+  if (kbCursor && kbCursor.isConnected) addParaHighlight(kbCursor);
+}
+// n: note on the live selection, else on the focused paragraph (focuses editor).
+export function kbNote() {
+  if (kbLiveSelection()) { addHighlight(true); return; }
+  if (kbCursor && kbCursor.isConnected) addParaNote(kbCursor);
+}
+export function kbPageNote() { addPageNote(); }
+
+// Traversal set (§7) is broader than the carded set anchoredFor() builds: it
+// includes bare highlights and bare paragraph marks too. Two-level order —
+// primary by text position, and when a paragraph mark and a text highlight share
+// a start offset the paragraph mark sorts above the highlight it contains.
+function kbNavMarks(): Annotation[] {
+  if (!currentSectionKey) return [];
+  return forSection(currentSectionKey)
+    .filter(a => (a.kind === 'highlight' || a.kind === 'para') && !a.orphaned && !!anchorEl[a.id])
+    .sort((a, b) => {
+      const pa = a.text_position ?? 0, pb = b.text_position ?? 0;
+      if (pa !== pb) return pa - pb;
+      if (a.kind !== b.kind) return a.kind === 'para' ? -1 : 1;
+      return 0;
+    });
+}
+// alt+j/k, mod+↓/↑. Land on a mark = activate it + scroll its rail card into the
+// band (ensureVisible). Bare highlights have no card, so nudge the mark itself in.
+export function kbStepMark(dir: 'next' | 'prev') {
+  const list = kbNavMarks();
+  if (!list.length) return;
+  const i = activeId ? list.findIndex(a => a.id === activeId) : -1;
+  const ni = i < 0 ? (dir === 'next' ? 0 : list.length - 1) : (dir === 'next' ? i + 1 : i - 1);
+  if (ni < 0 || ni >= list.length) return;
+  const id = list[ni].id;
+  pendingScroll = id;           // consumed by refresh() -> ensureVisible (carded notes)
+  setActive(id);
+  if (!cardRefs[id]) requestAnimationFrame(() => kbScrollAnchor(id));
+}
+function kbScrollAnchor(id: string) {
+  const el = anchorEl[id];
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const hb = headerBottom();
+  if (r.top < hb + 4 || r.bottom > window.innerHeight - 12)
+    window.scrollBy({ top: r.top - hb - 8, behavior: 'smooth' });
+}
+
+// Esc ladder rungs 3–5 (rungs 1–2 — modal/editor — are owned by the focused
+// dialog/editor and never reach the document listener). Returns whether a rung
+// fired, so the caller knows whether to preventDefault.
+export function kbEscape(): boolean {
+  if (activeId && !editingId) { setActive(null); return true; }      // rung 3
+  const sel = window.getSelection();                                  // rung 4
+  if (sel && !sel.isCollapsed && sel.rangeCount && bodyEl
+      && bodyEl.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+    sel.removeAllRanges(); removePopup(); return true;
+  }
+  if (kbCursor) { kbSetCursor(null); return true; }                   // rung 5
+  return false;
+}
+
 // ---- init / teardown --------------------------------------------------------
 export function initAnnotations(signal: AbortSignal) {
   const host = document.querySelector<HTMLElement>('[data-section-key]');
@@ -1644,6 +1793,7 @@ export function initAnnotations(signal: AbortSignal) {
     pagePanelEl = null; pageListEl = null; aboveEl = null; belowEl = null;
     activeId = null; editingId = null; isNew = false; pageCollapsed = false;
     pendingScroll = null; pendingFocus = null;
+    kbCursor = null;   // the tagged blocks die with the swapped-out page; drop the ref
     for (const k in cardRefs) delete cardRefs[k];
     for (const k in anchorEl) delete anchorEl[k];
   });
