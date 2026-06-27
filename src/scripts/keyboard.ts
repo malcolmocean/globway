@@ -7,6 +7,9 @@
 import {
   kbFocusBlock, kbHighlight, kbNote, kbPageNote, kbStepMark, kbEscape,
 } from './annotations';
+import {
+  kbNotesMove, kbNotesEnter, kbNotesOpen, kbNotesEdit, kbNotesDelete, kbNotesEscape,
+} from './notes-view';
 
 // mac vs win/linux, resolved once. `mod` = ⌘ on mac, Ctrl elsewhere — used at
 // both match time (below) and render time (the help overlay), from one table.
@@ -23,7 +26,7 @@ export interface KeyboardHost {
 let host: KeyboardHost = { toggle: () => {}, copyMd: () => {} };
 
 // ---- keymap table -----------------------------------------------------------
-type Scope = 'body' | 'sidebar';
+type Scope = 'body' | 'sidebar' | 'notes';
 interface Command { id: string; title: string; run: () => void; }
 interface Binding {
   keys: string;          // e.g. 'j', 'alt+j', 'mod+ArrowDown', '?', 'Escape'
@@ -48,6 +51,14 @@ const COMMANDS: Record<string, Command> = {
   'mark.prev':     { id: 'mark.prev',     title: 'Previous highlight / note',     run: () => kbStepMark('prev') },
   'help':          { id: 'help',          title: 'Show this help',                run: openHelp },
   'esc':           { id: 'esc',           title: 'Dismiss cursor / selection / active note', run: () => { kbEscape(); } },
+  // notes view (/notes) — a virtual cursor over the note cards
+  'notes.next':   { id: 'notes.next',   title: 'Focus next note',          run: () => kbNotesMove('next') },
+  'notes.prev':   { id: 'notes.prev',   title: 'Focus previous note',      run: () => kbNotesMove('prev') },
+  'notes.open':   { id: 'notes.open',   title: 'Open note’s section', run: kbNotesEnter },
+  'notes.newtab': { id: 'notes.newtab', title: 'Open section in new tab',  run: () => kbNotesOpen(true) },
+  'notes.edit':   { id: 'notes.edit',   title: 'Edit note',                run: kbNotesEdit },
+  'notes.delete': { id: 'notes.delete', title: 'Delete note',              run: kbNotesDelete },
+  'notes.esc':    { id: 'notes.esc',    title: 'Cancel delete / clear cursor', run: () => { kbNotesEscape(); } },
   // Sidebar commands run through runSidebar() (they need the focused row); the
   // entries here exist so the help overlay can name them.
   'sb.down':   { id: 'sb.down',   title: 'Move down',          run: () => {} },
@@ -90,6 +101,19 @@ const TABLE: Binding[] = [
   { keys: 'mod+Enter',  command: 'sb.newtab', scope: 'sidebar', group: 'Sidebar', native: true },
   { keys: 's',          command: 'sb.exit',   scope: 'sidebar', group: 'Sidebar' },
   { keys: 'Escape',     command: 'sb.exit',   scope: 'sidebar', group: 'Sidebar' },
+  // notes view (/notes) — owns the document scope on that page (the body reading
+  // bindings don't apply there). hjkl-style + the shared s / ? bindings.
+  { keys: 'j',         command: 'notes.next',   scope: 'notes', group: 'Notes view' },
+  { keys: 'ArrowDown', command: 'notes.next',   scope: 'notes', group: 'Notes view' },
+  { keys: 'k',         command: 'notes.prev',   scope: 'notes', group: 'Notes view' },
+  { keys: 'ArrowUp',   command: 'notes.prev',   scope: 'notes', group: 'Notes view' },
+  { keys: 'Enter',     command: 'notes.open',   scope: 'notes', group: 'Notes view' },
+  { keys: 'mod+Enter', command: 'notes.newtab', scope: 'notes', group: 'Notes view' },
+  { keys: 'e',         command: 'notes.edit',   scope: 'notes', group: 'Notes view' },
+  { keys: 'd',         command: 'notes.delete', scope: 'notes', group: 'Notes view' },
+  { keys: 's',         command: 'sidebar.focus', scope: 'notes', group: 'Notes view' },
+  { keys: '?',         command: 'help',         scope: 'notes', group: 'General' },
+  { keys: 'Escape',    command: 'notes.esc',    scope: 'notes', group: 'Notes view' },
 ];
 
 // ---- key parsing & matching -------------------------------------------------
@@ -138,7 +162,12 @@ function bindingMatches(e: KeyboardEvent, p: ParsedKey): boolean {
 
 const bodyBindings = TABLE.filter(b => b.scope === 'body').map(b => ({ ...b, parsed: parseKeys(b.keys) }));
 const sidebarBindings = TABLE.filter(b => b.scope === 'sidebar').map(b => ({ ...b, parsed: parseKeys(b.keys) }));
+const notesBindings = TABLE.filter(b => b.scope === 'notes').map(b => ({ ...b, parsed: parseKeys(b.keys) }));
 const HELP_PARSED = parseKeys('?');
+
+// True on the all-notes page (/notes). Its document scope belongs to the notes
+// cursor, not the article-reading bindings (there's no article body there).
+function onNotesPage(): boolean { return !!document.querySelector('[data-notes-view]'); }
 
 // The one guard that makes typing & dialogs safe: if the event is inside a field
 // or an open dialog, the nav listeners do nothing. closest() matches any
@@ -152,6 +181,7 @@ function navGuardBail(e: KeyboardEvent): boolean {
 function onBodyKey(e: KeyboardEvent) {
   if (navGuardBail(e)) return;
   if ((e.target as HTMLElement).closest('.sidebar')) return;     // the sidebar owns its own keys
+  if (onNotesPage()) return;                                     // the notes cursor owns this page
   for (const b of bodyBindings) {
     if (!bindingMatches(e, b.parsed)) continue;
     if (b.command === 'esc') { if (kbEscape()) e.preventDefault(); return; }
@@ -175,6 +205,23 @@ function onSidebarKey(e: KeyboardEvent) {
     e.preventDefault();
     e.stopPropagation();                                         // only the keys we handle
     runSidebar(b.command, row);
+    return;
+  }
+}
+
+// ---- notes view listener ----------------------------------------------------
+// Lives on `document` (the /notes container isn't a persistent element, so we
+// can't bind to it once). Active only on /notes, and only when focus isn't in the
+// sidebar (which owns its own keys) or a field/dialog (the nav guard).
+function onNotesKey(e: KeyboardEvent) {
+  if (navGuardBail(e)) return;
+  if ((e.target as HTMLElement).closest('.sidebar')) return;
+  if (!onNotesPage()) return;
+  for (const b of notesBindings) {
+    if (!bindingMatches(e, b.parsed)) continue;
+    if (b.command === 'notes.esc') { if (kbNotesEscape()) e.preventDefault(); return; }
+    e.preventDefault();
+    COMMANDS[b.command]?.run();
     return;
   }
 }
@@ -328,6 +375,7 @@ function closeHelp() { helpEl?.remove(); helpEl = null; }
 export function initKeyboard(h: KeyboardHost) {
   host = h;
   document.addEventListener('keydown', onBodyKey);
+  document.addEventListener('keydown', onNotesKey);
   sidebarRoot()?.addEventListener('keydown', onSidebarKey);
   document.addEventListener('astro:before-swap', closeHelp);     // the overlay's <body> is swapped away
 }

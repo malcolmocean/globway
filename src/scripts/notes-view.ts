@@ -17,6 +17,7 @@
 // store the section pages read — so a change here is reflected when you next open
 // the section, and vice-versa.
 // ===========================================================================
+import { navigate } from 'astro:transitions/client';
 import {
   type Annotation,
   getAllAnnotations,
@@ -36,6 +37,7 @@ let listEl: HTMLElement | null = null;
 let countEl: HTMLElement | null = null;
 let editingId: string | null = null;       // note whose editor is open
 let confirmDeleteId: string | null = null;  // note showing the inline delete confirm
+let cursorId: string | null = null;         // keyboard virtual cursor (see kb surface)
 
 // ---- section paragraph cache ------------------------------------------------
 // canonical key -> its top-level block texts (fetched once from the static page).
@@ -48,6 +50,11 @@ function baseUrl(): string {
   return b.endsWith('/') ? b : b + '/';
 }
 function sectionHref(canon: string): string { return `${baseUrl()}s/${canon}`; }
+// A section URL that asks the section page to land on (scroll to + activate) a
+// specific note — see annotations.ts's ?note consumer.
+function noteHref(canon: string, id: string): string {
+  return `${sectionHref(canon)}?note=${encodeURIComponent(id)}`;
+}
 
 // Extract the same top-level blocks the annotation engine tags (top-level
 // p/hN/blockquote/pre + first-level list items), as normalized plaintext — so a
@@ -196,7 +203,7 @@ function buildCard(a: Annotation, canon: string): HTMLElement {
     + `<div class="note-foot">`
     + `<span class="note-kind" title="${kindLabel(a)}" aria-label="${kindLabel(a)}">${KIND_ICON[a.kind]}</span>`
     + `<span class="note-foot-right">`
-    + `<a class="note-open" href="${sectionHref(canon)}">open in section →</a>`
+    + `<a class="note-open" href="${noteHref(canon, a.id)}">open in section →</a>`
     + `<span class="note-actions">${actionsHtml(a)}</span>`
     + `</span></div>`;
   return card;
@@ -302,6 +309,7 @@ function render() {
       });
     }
   }
+  kbApplyCursor();   // re-paint the keyboard cursor (render() rebuilt the cards)
 }
 
 // Re-render just the context paragraphs of one section after its text loads —
@@ -358,6 +366,129 @@ function onClick(e: MouseEvent) {
   if (dx) { confirmDeleteId = null; render(); return; }
 }
 
+// ===========================================================================
+// KEYBOARD NAVIGATION SURFACE
+//
+// Mirrors the article body's virtual-cursor model (annotations.ts): a purely
+// visual cursor (.kb-note-focus on a note card, no real DOM focus / tab stop)
+// that keyboard.ts's /notes-scope bindings drive. The cards are the same ones the
+// mouse acts on, so edit/delete reuse the exact paths onClick() uses — there's no
+// parallel controller. Section navigation reuses the card's own links so Astro's
+// view transitions still fire.
+// ===========================================================================
+function noteCards(): HTMLElement[] {
+  return listEl ? Array.from(listEl.querySelectorAll<HTMLElement>('[data-note-id]')) : [];
+}
+function cursorCard(): HTMLElement | null {
+  return cursorId ? listEl?.querySelector<HTMLElement>(`[data-note-id="${CSS.escape(cursorId)}"]`) ?? null : null;
+}
+function kbApplyCursor() {
+  noteCards().forEach(el => el.classList.toggle('kb-note-focus', el.dataset.noteId === cursorId));
+}
+// The top of the usable band: clear of the fixed mobile "Contents" toggle when
+// it's showing (narrow screens), else just the viewport top. So a re-seed never
+// lands on a card occluded from the top.
+function kbTopGuard(): number {
+  const t = document.querySelector('.nav-toggle');
+  return t && t.getClientRects().length ? t.getBoundingClientRect().bottom + 8 : 8;
+}
+// Is the card showing in the usable band (any sliver below the guard, above fold)?
+function kbOnScreen(el: HTMLElement): boolean {
+  const r = el.getBoundingClientRect();
+  return r.bottom > kbTopGuard() + 4 && r.top < window.innerHeight - 4;
+}
+// Re-seed target: the topmost card fully in view from the top (not clipped by the
+// guard); failing that any visible card (e.g. one taller than the viewport); else
+// the first card. Mirrors the article body's kbSeed.
+function kbSeed(cards: HTMLElement[]): HTMLElement {
+  const top = kbTopGuard(), vh = window.innerHeight;
+  return cards.find(el => { const r = el.getBoundingClientRect(); return r.top >= top - 1 && r.top < vh - 8; })
+    ?? cards.find(kbOnScreen)
+    ?? cards[0];
+}
+
+// j/k (↑/↓). With no cursor — or one that's gone / scrolled off-screen — the press
+// (re)seeds from the top of the viewport and does NOT step; subsequent presses
+// step card to card, stopping at the ends and scrolling only as far as needed.
+export function kbNotesMove(dir: 'next' | 'prev') {
+  const cards = noteCards();
+  if (!cards.length) return;
+  const cur = cursorCard();
+  if (!cur || !kbOnScreen(cur)) {
+    cursorId = kbSeed(cards).dataset.noteId!;
+    kbApplyCursor();
+    kbScrollToCursor();
+    return;
+  }
+  const i = cards.indexOf(cur);
+  const ni = dir === 'next' ? i + 1 : i - 1;
+  if (ni < 0 || ni >= cards.length) return;     // at an edge: stay put
+  cursorId = cards[ni].dataset.noteId!;
+  kbApplyCursor();
+  kbScrollToCursor();
+}
+// Scroll the *minimum* needed to reveal the cursor card — never when it's already
+// inside the band (guard → viewport bottom). Hand-rolled (not scrollIntoView,
+// which overshoots near edges / on tall elements), mirroring the article body.
+function kbScrollToCursor() {
+  const el = cursorCard();
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const top = kbTopGuard(), bottom = window.innerHeight;
+  let delta = 0;
+  if (r.bottom > bottom && r.top > top) delta = Math.min(r.bottom - bottom, r.top - top);
+  else if (r.top < top && r.bottom < bottom) delta = r.top - top;
+  if (Math.abs(delta) > 1) window.scrollBy({ top: delta, behavior: 'smooth' });
+}
+
+// The section URL the focused card opens to — carrying its note id so the section
+// page scrolls to and activates that exact note (page notes included; they have no
+// inline "open" link, so the keyboard is their only opener).
+function cursorTargetHref(): string | null {
+  const card = cursorCard();
+  const canon = card?.closest<HTMLElement>('.note-group')?.dataset.section;
+  return card && canon ? noteHref(canon, card.dataset.noteId!) : null;
+}
+export function kbNotesOpen(newTab: boolean) {
+  const href = cursorTargetHref();
+  if (!href) return;
+  if (newTab) window.open(href, '_blank', 'noopener');
+  else navigate(href);     // SPA navigation (Astro view transitions)
+}
+// Enter: confirm a pending delete on the focused card, else open its section.
+export function kbNotesEnter() {
+  if (confirmDeleteId && confirmDeleteId === cursorId) { kbNotesDelete(); return; }
+  kbNotesOpen(false);
+}
+export function kbNotesEdit() {
+  if (!cursorCard()) return;
+  confirmDeleteId = null;
+  editingId = cursorId;
+  render();              // focuses the textarea (see render())
+}
+// d: first press arms the inline confirm on the focused card; second press (or
+// Enter) deletes and moves the cursor to a neighbour.
+export function kbNotesDelete() {
+  const card = cursorCard();
+  if (!card) return;
+  if (confirmDeleteId !== cursorId) { confirmDeleteId = cursorId; render(); return; }
+  const cards = noteCards();
+  const i = cards.indexOf(card);
+  const neighbour = cards[i + 1] ?? cards[i - 1] ?? null;
+  const id = cursorId!;
+  confirmDeleteId = null;
+  cursorId = neighbour ? neighbour.dataset.noteId! : null;
+  deleteAnnotation(id);
+  render();
+}
+// Esc ladder: cancel a pending delete, then clear the cursor. (Editing Esc is
+// owned by the textarea, which the nav guard keeps these bindings out of.)
+export function kbNotesEscape(): boolean {
+  if (confirmDeleteId) { confirmDeleteId = null; render(); return true; }
+  if (cursorId) { cursorId = null; kbApplyCursor(); return true; }
+  return false;
+}
+
 // ---- init -------------------------------------------------------------------
 export function initNotesView(signal: AbortSignal) {
   const host = document.querySelector<HTMLElement>('[data-notes-view]');
@@ -371,6 +502,7 @@ export function initNotesView(signal: AbortSignal) {
 
   editingId = null;
   confirmDeleteId = null;
+  cursorId = null;
   host.addEventListener('click', onClick as EventListener, { signal });
   // A late Supabase pull (sign-in / back online) replaces the store — re-render so
   // synced notes from other devices appear without a manual reload.
@@ -380,6 +512,6 @@ export function initNotesView(signal: AbortSignal) {
 
   signal.addEventListener('abort', () => {
     listEl = null; countEl = null;
-    editingId = null; confirmDeleteId = null;
+    editingId = null; confirmDeleteId = null; cursorId = null;
   });
 }

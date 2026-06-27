@@ -37,7 +37,11 @@
   }
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+/* Theme the root itself (not just <body>): during a navigation / view transition /
+   the note loader's blank moment, the browser would otherwise paint its default
+   white canvas — a white flash in dark mode. `color-scheme` makes the UA canvas
+   follow the theme, and the explicit background covers any unpainted root. */
+html { scroll-behavior: smooth; background: var(--bg); color-scheme: light dark; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font-family: ui-serif, Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
@@ -333,6 +337,18 @@ mark.hl {
 }
 mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--para-edge); border-bottom-width: 3px; }
 
+/* "Opening a note" loader (note-arrival.ts): a thin bar that sweeps across the top
+   of the viewport while the deep-linked section positions itself underneath, then
+   fills and fades out. The is-done rule follows is-loading so it wins when both are
+   present (fill → 100%, then the bar fades). */
+.note-loadbar { position: fixed; inset: 0 0 auto 0; height: 3px; z-index: 200; pointer-events: none; }
+.note-loadbar::before { content: ''; display: block; height: 100%; width: 0;
+  background: var(--accent); box-shadow: 0 0 10px var(--accent); border-radius: 0 2px 2px 0;
+  transition: width .7s ease-out; }
+.note-loadbar.is-loading::before { width: 90%; }
+.note-loadbar.is-done::before { width: 100%; transition: width .15s ease-out; }
+.note-loadbar.is-done { opacity: 0; transition: opacity .35s ease .12s; }
+
 /* paragraph-note outline. The tint + breathing room live on an ::after that's
    inset negative (bigger than the block) so it adds visual padding without ever
    reflowing the prose. The outline lives on that same ::after (not on the block
@@ -610,6 +626,18 @@ li.kb-focus::before { left: calc(-1rem - 5px); }
 .note-pagenote + .note-pagenote { border-top: 1px solid var(--line); }
 .note-pagenote .note-body { margin-bottom: .35rem; }
 .note-pageact { display: flex; justify-content: flex-end; }
+
+/* Keyboard virtual cursor: a background tint on the focused card (no real DOM
+   focus, so it survives re-renders and never fights native scroll). A tint, not a
+   ring — it doesn't clash with the card's kind-colored left border, nor get
+   clipped by the page-notes block's overflow:hidden. Selectors are
+   card-qualified so this beats .note's own background regardless of source order. */
+.note.kb-note-focus,
+.note-pagenote.kb-note-focus { background: color-mix(in srgb, var(--accent) 5%, var(--card)); }
+@media (prefers-color-scheme: dark) {
+  .note.kb-note-focus,
+  .note-pagenote.kb-note-focus { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+}
 
 .note-edit { width: 100%; box-sizing: border-box; min-height: 5.5rem; resize: vertical;
   font: inherit; font-size: 14px; line-height: 1.5; padding: .5rem .6rem;

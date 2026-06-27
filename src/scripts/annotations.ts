@@ -1,4 +1,5 @@
 import { getSupabase } from '../lib/supabase';
+import { noteArrivalBegin, noteArrivalEnd } from './note-arrival';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import aliasData from '../data/aliases.json';
@@ -1738,6 +1739,36 @@ function kbScrollAnchor(id: string) {
     window.scrollBy({ top: r.top - hb - 8, behavior: 'smooth' });
 }
 
+// Deep-link target from the all-notes view: activate + position a specific note in
+// this section. Anchored notes get their mark/block painted active and the page
+// jumps (instantly — the settle is hidden behind the loader, see note-arrival.ts)
+// to bring it under the header; a page note just opens the panel (it's always in
+// view). No-op if the id isn't a live annotation of the section now on screen.
+export function activateNote(id: string) {
+  if (!prepActivate(id)) return;
+  setActive(id);                 // active styling + open card; no pendingScroll = no smooth scroll
+  requestAnimationFrame(() => scrollNoteIntoBand(id));
+}
+// Re-run only the positioning (after fonts/layout settle), so the loader can reveal
+// exactly on the note.
+export function repositionNote(id: string) {
+  if (annotations[id]) scrollNoteIntoBand(id);
+}
+function prepActivate(id: string): boolean {
+  const a = annotations[id];
+  if (!a || a.deleted || !currentSectionKey) return false;
+  if (resolveKey(a.section_key) !== currentSectionKey) return false;
+  if (a.kind === 'note' || a.orphaned) pageCollapsed = false;   // ensure the panel shows it
+  return true;
+}
+function scrollNoteIntoBand(id: string) {
+  const el = anchorEl[id];       // only anchored notes have a place to scroll to
+  if (!el) return;               // page notes live in the always-visible panel
+  const r = el.getBoundingClientRect();
+  const target = Math.max(0, window.scrollY + r.top - headerBottom() - 24);
+  window.scrollTo({ top: target, behavior: 'auto' });   // instant; the loader masks it
+}
+
 // Esc ladder rungs 3–5 (rungs 1–2 — modal/editor — are owned by the focused
 // dialog/editor and never reach the document listener). Returns whether a rung
 // fired, so the caller knows whether to preventDefault.
@@ -1788,6 +1819,19 @@ export function initAnnotations(signal: AbortSignal) {
 
   refresh();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (railEl) layout(); });
+
+  // Deep link from the all-notes view (/s/<key>?note=<id>): land on that note under
+  // cover of the loader (note-arrival.ts) so the scroll/settle is never seen, then
+  // strip the param so a later reload / re-layout doesn't re-yank scroll.
+  const noteParam = new URLSearchParams(location.search).get('note');
+  if (noteParam) {
+    noteArrivalBegin();
+    activateNote(noteParam);
+    noteArrivalEnd(() => repositionNote(noteParam));   // reposition while hidden, then reveal
+    const u = new URL(location.href);
+    u.searchParams.delete('note');
+    history.replaceState(history.state, '', u);
+  }
 
   signal.addEventListener('abort', () => {
     removePopup();
