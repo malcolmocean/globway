@@ -11,7 +11,12 @@
   --star: #d99a09;
   --star-tint: #fbf3dd;
   --maxw: 46rem;
+  --rail-w: 20rem;
   --sidebar-w: 20rem;
+  /* annotations: single highlight + paragraph-note tints */
+  --hl: rgba(246, 221, 86, .5); --hl-strong: rgba(246, 221, 86, .82);
+  --hl-edge: #e3c441; --para: rgba(47, 111, 219, .10); --para-edge: #2f6fdb;
+  --card: var(--bg-elev);
   --sidebar-pad: .75rem;
   /* drop-shadow under a pinned sidebar parent that's hiding content */
   --pin-shadow: 0 6px 7px -4px rgba(0,0,0,.34);
@@ -23,13 +28,20 @@
     --bg: #18161a; --bg-elev: #201d22; --sidebar-bg: #1c1a1f; --text: #e8e3dd;
     --muted: #9b938b; --line: #322e36; --accent: #79a8a9; --read: #4ec38c;
     --read-tint: #16291f; --star: #e8b73b; --star-tint: #2a2412;
+    --hl: rgba(227, 196, 65, .22); --hl-strong: rgba(227, 196, 65, .4);
+    --hl-edge: rgba(227, 196, 65, .6); --para: rgba(130, 170, 235, .16); --para-edge: rgba(140, 175, 235, .82);
+    --card: #23202a;
     /* black shadows vanish on the near-black sidebar, and a heavy one muddies the
        text below — use a soft accent-tinted glow instead to lift the pinned row. */
     --pin-shadow: 0 4px 10px -2px rgba(121,168,169,.32);
   }
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+/* Theme the root itself (not just <body>): during a navigation / view transition /
+   the note loader's blank moment, the browser would otherwise paint its default
+   white canvas — a white flash in dark mode. `color-scheme` makes the UA canvas
+   follow the theme, and the explicit background covers any unpainted root. */
+html { scroll-behavior: smooth; background: var(--bg); color-scheme: light dark; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font-family: ui-serif, Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
@@ -260,9 +272,16 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
    lifted out of the article body (see s/[key].astro) so it travels with the
    controls, which float to the right of it on the same row. */
 .section-head {
-  position: sticky; top: 0; z-index: 5;
-  background: var(--bg); margin: 0 0 1.2rem;
-  padding: .5rem 0 .5rem; border-bottom: 1px solid var(--line);
+  /* Above the side-rail cards (z 6–24) so they scroll *under* the sticky header
+     instead of covering the top-bar controls; still below the floating popups
+     (z 90) and the mobile drawer toggle (z 60). */
+  position: sticky; top: 0; z-index: 40;
+  /* Bleed the background a few px into the side gutters (negative margin balanced
+     by padding, so the header content doesn't shift) — otherwise a paragraph
+     note's tint/outline box, which sits ~6–7px wider than the text column on each
+     side, peeks out past the header's edges as the paragraph scrolls under it. */
+  background: var(--bg); margin: 0 -8px 1.2rem;
+  padding: .5rem 8px .5rem; border-bottom: 1px solid var(--line);
 }
 .section-head .crumbs { margin-bottom: .3rem; }
 .section-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
@@ -303,3 +322,375 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .meta { color: var(--muted); font-size: 13px; font-family: ui-sans-serif, system-ui, sans-serif; }
 .sidebar-foot { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--line);
   font-family: ui-sans-serif, system-ui, sans-serif; font-size: 11px; line-height: 1.45; color: var(--muted); }
+
+/* ---- annotations: highlights, paragraph notes & side rail ---- */
+
+/* The body + rail share a row. Single column by default (rail stacks below the
+   text); a true side rail appears when there's room (>=1200px). */
+.annot-row { position: relative; }
+.annot-rail { margin-top: 1.6rem; font-family: ui-sans-serif, system-ui, sans-serif; }
+
+/* single highlight style (no per-color classes anymore) */
+mark.hl {
+  background: var(--hl); color: inherit; cursor: pointer; padding: 0;
+  border-bottom: 2px solid var(--hl-edge); transition: background .15s, border-color .15s;
+}
+mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--para-edge); border-bottom-width: 3px; }
+
+/* "Opening a note" loader (note-arrival.ts): a thin bar that sweeps across the top
+   of the viewport while the deep-linked section positions itself underneath, then
+   fills and fades out. The is-done rule follows is-loading so it wins when both are
+   present (fill → 100%, then the bar fades). */
+.note-loadbar { position: fixed; inset: 0 0 auto 0; height: 3px; z-index: 200; pointer-events: none; }
+.note-loadbar::before { content: ''; display: block; height: 100%; width: 0;
+  background: var(--accent); box-shadow: 0 0 10px var(--accent); border-radius: 0 2px 2px 0;
+  transition: width .7s ease-out; }
+.note-loadbar.is-loading::before { width: 90%; }
+.note-loadbar.is-done::before { width: 100%; transition: width .15s ease-out; }
+.note-loadbar.is-done { opacity: 0; transition: opacity .35s ease .12s; }
+
+/* paragraph-note outline. The tint + breathing room live on an ::after that's
+   inset negative (bigger than the block) so it adds visual padding without ever
+   reflowing the prose. The outline lives on that same ::after (not on the block
+   with an outline-offset), so the border hugs the tint exactly on every side —
+   no offset/inset mismatch, and the vertical inset can differ from horizontal. */
+.para-anchor { position: relative; cursor: pointer; }
+.para-anchor::after { content: ''; position: absolute; inset: -3px -4px; z-index: -1;
+  background: var(--para); border-radius: 6px; pointer-events: none;
+  outline: 2px solid var(--para-edge); }
+.para-anchor.is-active::after { outline-width: 3px; }
+
+@media (min-width: 1200px) {
+  .content { max-width: calc(var(--maxw) + var(--rail-w) + 2.5rem); }
+  .annot-row { display: flex; align-items: flex-start; gap: 2.5rem; }
+  .annot-body { flex: 1; min-width: 0; max-width: var(--maxw); }
+  .annot-rail { position: relative; width: var(--rail-w); flex: none; margin-top: 0; }
+  /* keep the chrome below the row aligned under the body column, not the rail */
+  .content > .subtoc, .content > .pager, .content > .meta { max-width: var(--maxw); }
+}
+
+/* fixed page-notes panel */
+.ann-page-panel { background: var(--bg-elev); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.07); overflow: hidden; }
+.ann-page-head { display: flex; align-items: center; justify-content: space-between;
+  padding: .35rem .35rem .35rem .7rem; border-bottom: 1px solid var(--line); cursor: pointer; user-select: none; }
+.ann-page-title { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--muted);
+  display: flex; align-items: center; gap: .4rem; }
+.ann-chevron { display: inline-block; transition: transform .18s; }
+.ann-page-panel.is-open .ann-chevron { transform: rotate(90deg); }
+.ann-page-list { padding: .5rem .55rem .1rem; overflow-y: auto; overflow-x: hidden; }
+.ann-empty { color: var(--muted); font-size: 13px; margin: .2rem .2rem .55rem; }
+
+/* cards */
+.ann-card { position: relative; background: var(--card); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: 9px; padding: .5rem .7rem;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04); margin-bottom: .45rem; }
+.ann-card.is-hl { border-left-color: var(--hl-edge); }
+.ann-card.is-para { border-left-color: var(--para-edge); }
+.ann-card.is-active { box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 0 0 1px var(--para-edge); }
+.ann-card-row { display: flex; align-items: flex-start; gap: .5rem; }
+.ann-md { flex: 1; min-width: 0; font-size: 14px; line-height: 1.5; color: var(--text); word-wrap: break-word; }
+/* full GFM rendering: tighten the first/last block so the card doesn't gain
+   stray top/bottom space, then give every other element sane spacing for the
+   narrow rail width. */
+.ann-md > :first-child { margin-top: 0; }
+.ann-md > :last-child { margin-bottom: 0; }
+.ann-md p { margin: 0 0 .5em; }
+.ann-md h1, .ann-md h2, .ann-md h3, .ann-md h4, .ann-md h5, .ann-md h6 {
+  margin: .7em 0 .35em; line-height: 1.25; font-weight: 700; }
+.ann-md h1 { font-size: 1.25em; } .ann-md h2 { font-size: 1.15em; }
+.ann-md h3 { font-size: 1.05em; } .ann-md h4, .ann-md h5, .ann-md h6 { font-size: 1em; }
+.ann-md ul, .ann-md ol { margin: 0 0 .5em; padding-left: 1.3em; }
+.ann-md li { margin: .1em 0; }
+.ann-md li > input[type=checkbox] { margin: 0 .4em 0 -1.1em; vertical-align: middle; }
+.ann-md li.task-list-item { list-style: none; }
+.ann-md blockquote { margin: .5em 0; padding: .1em .8em; border-left: 3px solid var(--line); color: var(--muted); }
+.ann-md hr { border: 0; border-top: 1px solid var(--line); margin: .7em 0; }
+.ann-md code { font-family: ui-monospace, Menlo, monospace; font-size: .86em; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+.ann-md pre { background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: .55rem .65rem; overflow-x: auto; margin: 0 0 .5em; }
+.ann-md pre code { background: none; padding: 0; font-size: .82em; }
+.ann-md img { max-width: 100%; height: auto; border-radius: 6px; }
+.ann-md table { border-collapse: collapse; display: block; overflow-x: auto; font-size: .92em; margin: 0 0 .5em; }
+.ann-md th, .ann-md td { border: 1px solid var(--line); padding: .2em .5em; text-align: left; }
+.ann-md th { background: var(--bg); font-weight: 600; }
+.ann-md a { color: var(--accent); }
+.ann-anchor-label { font-size: 11.5px; color: var(--muted); font-style: italic; margin-bottom: .4rem; line-height: 1.4; }
+.ann-detached { font-size: 11px; color: #b4673a; margin-bottom: .35rem; }
+.ann-card-tools { display: flex; gap: .15rem; flex: none; margin: -2px -3px 0 0; }
+
+.ann-icon-btn { border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  width: 26px; height: 26px; border-radius: 7px; font-size: 15px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center; transition: background .12s, color .12s; }
+.ann-icon-btn:hover { background: var(--bg); color: var(--text); }
+.ann-del:hover { background: color-mix(in srgb, #c0392b 14%, transparent); color: #c0392b; }
+
+/* collapsed preview pill */
+.ann-pill { display: flex; align-items: center; gap: .55rem; cursor: pointer;
+  background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--hl-edge);
+  border-radius: 9px; padding: .5rem .7rem; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  transition: box-shadow .14s, transform .14s; }
+.ann-pill.is-para { border-left-color: var(--para-edge); }
+.ann-pill:hover { box-shadow: 0 2px 9px rgba(0,0,0,.08); transform: translateX(-2px); }
+.ann-pill-dot { flex: none; width: 15px; height: 15px; border-radius: 50%; background: var(--hl);
+  border: 1.5px solid var(--hl-edge); display: flex; align-items: center; justify-content: center;
+  font-size: 9px; color: var(--muted); }
+.ann-pill.is-para .ann-pill-dot { background: var(--para); border-color: var(--para-edge); }
+.ann-pill-text { flex: 1; min-width: 0; font-size: 12.5px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* editor */
+.ann-textarea { width: 100%; min-height: 58px; resize: vertical; font: inherit; font-size: 14px;
+  line-height: 1.45; padding: .45rem .55rem; border: 1px solid var(--accent); border-radius: 7px;
+  background: var(--bg); color: var(--text); outline: none; }
+.ann-md-hint { font-size: 10.5px; color: var(--muted); margin: .35rem 0 .45rem; }
+.ann-editor-actions { display: flex; gap: .45rem; }
+.ann-save, .ann-cancel { font: inherit; font-size: 12.5px; cursor: pointer; border-radius: 8px; padding: .35rem .85rem; }
+.ann-save { font-weight: 600; border: 0; background: var(--accent); color: #fff; }
+.ann-cancel { border: 1px solid var(--line); background: var(--bg-elev); color: var(--text); }
+.ann-draft-flag { color: var(--star); font-weight: 600; }
+
+/* unsaved-draft markers on cards / pills */
+.ann-draft-badge { display: inline-flex; align-items: center; flex: none;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--star); background: var(--star-tint);
+  border: 1px solid color-mix(in srgb, var(--star) 45%, transparent);
+  border-radius: 999px; padding: 1px 6px; line-height: 1.5; }
+.ann-card .ann-draft-badge { margin-bottom: .4rem; }
+.ann-pill .ann-draft-badge { margin-left: .35rem; }
+.ann-card.has-draft { border-left-color: var(--star); }
+.ann-pill.has-draft { border-left-color: var(--star); }
+
+/* discard-confirm modal */
+.ann-modal-overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center;
+  justify-content: center; padding: 1rem; background: rgba(0,0,0,.4);
+  font-family: ui-sans-serif, system-ui, sans-serif; }
+.ann-modal { width: 100%; max-width: 22rem; background: var(--bg-elev); color: var(--text);
+  border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 14px 44px rgba(0,0,0,.32);
+  padding: 1.1rem 1.2rem 1rem; }
+.ann-modal-title { margin: 0 0 .3rem; font-size: 15px; font-weight: 700; }
+.ann-modal-msg { margin: 0 0 1rem; font-size: 13px; color: var(--muted); }
+.ann-modal-actions { display: flex; gap: .5rem; justify-content: flex-end; }
+.ann-modal-actions button { font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  border-radius: 8px; padding: .45rem .9rem; }
+.ann-modal-keep { border: 1px solid var(--line); background: var(--bg-elev); color: var(--text); }
+.ann-modal-keep:hover { border-color: var(--muted); }
+.ann-modal-keep:focus-visible, .ann-modal-discard:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; }
+.ann-modal-discard { border: 0; background: #c0392b; color: #fff; }
+.ann-modal-discard:hover { background: #a93226; }
+
+/* off-screen ↑/↓ counters (wide only) */
+.ann-offscreen { position: fixed; transform: translateX(-50%); width: 34px; height: 34px;
+  align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: var(--muted);
+  background: var(--bg-elev); border: 1px solid var(--line); border-radius: 50%; cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,.05); z-index: 24; }
+.ann-offscreen:hover { color: var(--text); border-color: var(--muted); }
+
+/* floating selection popup / bare-mark menu / ¶ fab (appended to <body>) */
+.ann-popup, .ann-mark-menu, .ann-para-fab { position: fixed; z-index: 90; font-family: ui-sans-serif, system-ui, sans-serif; }
+.ann-popup { display: flex; gap: .15rem; transform: translate(-50%, -100%);
+  background: var(--accent); border-radius: 10px; padding: 4px; box-shadow: 0 6px 18px rgba(0,0,0,.24); }
+.ann-popup button { font: 600 12.5px/1 inherit; padding: .5rem .8rem; border: 0; border-radius: 7px;
+  background: transparent; color: #fff; cursor: pointer; display: inline-flex; align-items: center; gap: .35em; }
+.ann-popup button:hover { background: rgba(255,255,255,.15); }
+/* leading glyphs in popup / mark-menu buttons read larger than the label text */
+.ann-ico { font-size: 1.35em; line-height: 1; }
+.ann-popup-sep { width: 1px; background: rgba(255,255,255,.25); margin: 4px 0; }
+.ann-mark-menu { display: flex; gap: .1rem; transform: translate(-50%, -100%);
+  background: var(--bg-elev); border: 1px solid var(--line); border-radius: 10px; padding: 4px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+.ann-mark-menu button { font: 600 12.5px/1 inherit; padding: .45rem .7rem; border: 0; border-radius: 7px;
+  background: transparent; color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: .35em; }
+.ann-mark-menu button:hover { background: var(--bg); }
+.ann-mm-remove { color: #c0392b !important; }
+.ann-mm-remove:hover { background: color-mix(in srgb, #c0392b 12%, transparent) !important; }
+/* The transparent padding on the outer wrapper enlarges the (invisible) hover
+   catch area and bridges the gap between the text and the menu, so the cursor
+   doesn't fall out of "hovering" on its way over. JS offsets position by it. */
+.ann-para-fab { align-items: center; justify-content: center; padding: 12px; }
+/* the visible affordance: a pill holding the highlight + note actions, stacked */
+.ann-fab-menu { display: flex; flex-direction: column; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--bg-elev); box-shadow: 0 2px 7px rgba(0,0,0,.08);
+  overflow: hidden; }
+.ann-fab-menu button { width: 42px; height: 38px; padding: 0; border: 0; line-height: 0;
+  background: transparent; color: var(--para-edge); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; }
+.ann-fab-menu button + button { border-top: 1px solid var(--line); }
+.ann-fab-menu button svg { display: block; }
+.ann-fab-menu button:hover { background: color-mix(in srgb, var(--para-edge) 12%, var(--bg-elev)); }
+
+/* ---- keyboard navigation ---- */
+/* The article body's virtual paragraph cursor: a class on a tagged block, never
+   real DOM focus (so native scroll stays on <body> and the block isn't a tab
+   stop). A left bar on a ::before, inset negative so it never reflows the prose. */
+.kb-focus { position: relative; }
+.kb-focus::before {
+  content: ''; position: absolute; top: -2px; bottom: -2px; left: calc(-1rem + 5px); width: 3px;
+  background: var(--accent); border-radius: 2px; pointer-events: none;
+}
+/* List items are indented, so the shared offset lands on the bullet — pull the
+   bar back out (left) to clear the marker. One offset works at every width: the
+   left gutter never drops below the main padding for paragraphs, and the list
+   indent (hence bullet clearance) doesn't change with viewport. */
+li.kb-focus::before { left: calc(-1rem - 5px); }
+
+/* Sidebar rows take *real* focus (roving tabindex). Mark the focused row with a
+   background tint (on both :focus-visible from Tab and :focus from our
+   programmatic j/k/s moves) — no border. */
+.sidebar nav[data-toc] a.row:focus { outline: none; }
+.sidebar nav[data-toc] a.row:focus-visible,
+.sidebar nav[data-toc] a.row:focus {
+  background: color-mix(in srgb, var(--accent) 22%, var(--sidebar-bg));
+}
+
+/* keyboard-shortcuts help overlay (generated from the keymap table) */
+.kbd-help-overlay { position: fixed; inset: 0; z-index: 120; display: flex;
+  align-items: center; justify-content: center; padding: 1.5rem; outline: none;
+  background: rgba(0, 0, 0, .45); font-family: ui-sans-serif, system-ui, sans-serif; }
+.kbd-help { width: 100%; max-width: 46rem; max-height: 84vh; overflow-y: auto;
+  background: var(--bg-elev); color: var(--text); border: 1px solid var(--line);
+  border-radius: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, .34); padding: 1.1rem 1.3rem 1.4rem; }
+.kbd-help-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .7rem; }
+.kbd-help-head h2 { margin: 0; font-size: 1.05rem; }
+.kbd-close { font: inherit; font-size: 1.4rem; line-height: 1; cursor: pointer; border: 0;
+  background: transparent; color: var(--muted); width: 2rem; height: 2rem; border-radius: 8px; }
+.kbd-close:hover { background: var(--bg); color: var(--text); }
+.kbd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .1rem 1.6rem; }
+.kbd-group { break-inside: avoid; margin-bottom: .6rem; }
+.kbd-group h3 { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); margin: .5rem 0 .3rem; }
+.kbd-row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: .16rem 0; }
+.kbd-title { font-size: 13px; color: var(--text); }
+.kbd-keys { flex: none; display: inline-flex; align-items: baseline; }
+.kbd-or { color: var(--muted); margin: 0 .3rem; font-size: 11px; }
+.kbd-keys kbd { font-family: ui-monospace, Menlo, monospace; font-size: 11px; line-height: 1.5;
+  background: var(--bg); border: 1px solid var(--line); border-bottom-width: 2px;
+  border-radius: 5px; padding: 1px 5px; color: var(--text); }
+
+/* ⌘K full-text search palette (lazy MiniSearch index; see src/scripts/search.ts) */
+.search-overlay { position: fixed; inset: 0; z-index: 130; display: flex;
+  align-items: flex-start; justify-content: center; padding: 9vh 1.25rem 1.25rem;
+  background: rgba(0, 0, 0, .45); font-family: ui-sans-serif, system-ui, sans-serif; }
+.search-box { width: 100%; max-width: 40rem; max-height: 78vh; display: flex; flex-direction: column;
+  background: var(--bg-elev); color: var(--text); border: 1px solid var(--line);
+  border-radius: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, .34); overflow: hidden; }
+.search-head { display: flex; align-items: center; gap: .55rem; padding: .7rem .9rem;
+  border-bottom: 1px solid var(--line); }
+.search-ic { font-size: 1rem; opacity: .7; flex: none; }
+.search-input { flex: 1; border: 0; background: transparent; color: var(--text);
+  font: inherit; font-size: 1.05rem; padding: .15rem 0; outline: none; }
+.search-input::placeholder { color: var(--muted); }
+.search-results { list-style: none; margin: 0; padding: .35rem; overflow-y: auto; }
+.search-empty { padding: 1rem .8rem; color: var(--muted); font-size: 13.5px; }
+.search-hit { padding: .5rem .65rem; border-radius: 9px; cursor: pointer; scroll-margin: .35rem; }
+.search-hit.is-sel { background: var(--card); }
+.sh-title { font-size: 14.5px; font-weight: 600; line-height: 1.3; }
+.sh-snip { font-size: 12.5px; color: var(--muted); line-height: 1.45; margin-top: .12rem;
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sh-sub { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--muted); margin-top: .25rem; opacity: .8; }
+.search-hit mark, .sh-snip mark { background: var(--hl-strong); color: inherit;
+  border-radius: 2px; padding: 0 1px; }
+.search-foot { display: flex; gap: 1.1rem; padding: .5rem .9rem; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 11px; }
+.search-foot kbd { font-family: ui-monospace, Menlo, monospace; font-size: 10px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-right: 2px; }
+@media (max-width: 640px) { .search-overlay { padding: 4vh .6rem .6rem; } .search-foot { display: none; } }
+
+/* ===========================================================================
+   All-notes view (/notes) — a cross-section digest. Sans-serif chrome around
+   serif context paragraphs, reusing the highlight (mark.hl) + .ann-md styles.
+   =========================================================================== */
+.notes-view { font-family: ui-sans-serif, system-ui, sans-serif; }
+.notes-head { margin: 0 0 1.5rem; }
+.notes-head h1 { font-family: ui-serif, Georgia, serif; margin: 0 0 .25rem; font-size: 1.9rem; }
+.notes-sub { margin: 0; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.notes-intro { margin: .5rem 0 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; max-width: 40rem; }
+.notes-foot { margin: 2rem 0 0; font-size: 13px; }
+
+.note-group { margin: 0 0 2rem; }
+.note-group-h { display: flex; align-items: baseline; gap: .5rem;
+  margin: 0 0 .7rem; padding-bottom: .35rem; border-bottom: 1px solid var(--line);
+  font-size: .8rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+.note-group-h a { font-family: ui-serif, Georgia, serif; font-size: 1.05rem; font-weight: 600;
+  letter-spacing: 0; text-transform: none; color: var(--text); text-decoration: none; }
+.note-group-h a:hover { color: var(--accent); text-decoration: underline; }
+.note-group-count { margin-left: auto; color: var(--muted); font-weight: 600;
+  font-variant-numeric: tabular-nums; }
+
+.note-group-list { display: flex; flex-direction: column; gap: .85rem; }
+.note { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--line);
+  border-radius: 10px; padding: .7rem .85rem; }
+.note--highlight { border-left-color: var(--hl-edge); }
+.note--para { border-left-color: var(--para-edge); }
+.note.is-detached { border-left-color: #b4673a; }
+
+/* The surrounding paragraph: serif, like the manual, dimmed so the note pops. */
+.note-ctx { font-family: ui-serif, Georgia, serif; font-size: 15px; line-height: 1.55;
+  color: var(--muted); margin: 0 0 .55rem; }
+.note-ctx .note-para { margin: 0; }
+.note-ctx .note-para.is-loading { font-style: italic; opacity: .7; }
+.note-ctx mark.hl { cursor: default; }
+.note-detached { font-size: 11px; color: #b4673a; margin-bottom: .35rem;
+  font-family: ui-sans-serif, system-ui, sans-serif; }
+
+.note-body { font-size: 14.5px; }   /* inherits .ann-md rules */
+
+/* Page-level notes: collected under one faded section excerpt (shown once) that
+   reads as a peek into the section, not a note — so no "preview" label needed. */
+.note-pageblock { background: var(--card); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: 10px; overflow: hidden; }
+.note-excerpt { display: block; position: relative;
+  font-family: ui-serif, Georgia, serif; font-size: 13.5px; line-height: 1.5;
+  color: var(--muted); text-decoration: none; padding: .55rem .85rem;
+  background: repeating-linear-gradient(var(--bg), var(--bg));
+  border-bottom: 1px dashed var(--line); }
+.note-excerpt::first-line { color: var(--muted); }
+.note-excerpt:hover { color: var(--text); }
+.note-excerpt:hover .note-excerpt-open { opacity: 1; }
+.note-excerpt-text .is-loading { font-style: italic; opacity: .7; }
+.note-excerpt-open { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 11px;
+  font-weight: 600; color: var(--accent); white-space: nowrap; margin-left: .35rem;
+  opacity: .65; transition: opacity .15s; }
+.note-pagenote { padding: .6rem .85rem; }
+.note-pagenote + .note-pagenote { border-top: 1px solid var(--line); }
+.note-pagenote .note-body { margin-bottom: .35rem; }
+.note-pageact { display: flex; justify-content: flex-end; }
+
+/* Keyboard virtual cursor: a background tint on the focused card (no real DOM
+   focus, so it survives re-renders and never fights native scroll). A tint, not a
+   ring — it doesn't clash with the card's kind-colored left border, nor get
+   clipped by the page-notes block's overflow:hidden. Selectors are
+   card-qualified so this beats .note's own background regardless of source order. */
+.note.kb-note-focus,
+.note-pagenote.kb-note-focus { background: color-mix(in srgb, var(--accent) 5%, var(--card)); }
+@media (prefers-color-scheme: dark) {
+  .note.kb-note-focus,
+  .note-pagenote.kb-note-focus { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+}
+
+.note-edit { width: 100%; box-sizing: border-box; min-height: 5.5rem; resize: vertical;
+  font: inherit; font-size: 14px; line-height: 1.5; padding: .5rem .6rem;
+  border: 1px solid var(--para-edge); border-radius: 8px; background: var(--bg-elev); color: var(--text); }
+.note-edit-actions { display: flex; gap: .4rem; margin-top: .5rem; }
+
+.note-foot { display: flex; align-items: center; gap: .6rem; margin-top: .6rem;
+  font-size: 12px; color: var(--muted); }
+.note-kind { display: inline-flex; align-items: center; color: var(--muted); }
+.note-kind svg { display: block; }
+.note--highlight .note-kind { color: var(--hl-edge); }
+.note--para .note-kind { color: var(--para-edge); }
+.note-foot-right { margin-left: auto; display: flex; align-items: center; gap: .7rem; }
+.note-open { color: var(--accent); text-decoration: none; white-space: nowrap; }
+.note-open:hover { text-decoration: underline; }
+.note-actions { display: inline-flex; align-items: center; gap: .15rem; }
+.note-icon { font: inherit; font-size: 15px; line-height: 1; cursor: pointer; color: var(--muted);
+  background: none; border: 0; border-radius: 6px; padding: .2rem .35rem; }
+.note-icon:hover { background: var(--bg); color: var(--text); }
+.note-del:hover { color: #c0392b; }
+.note-confirm { display: inline-flex; align-items: center; gap: .35rem; color: var(--text); }
+.note-del-yes { border-color: #c0392b; color: #c0392b; }
+
+.notes-empty { color: var(--muted); font-size: 14px; line-height: 1.6; max-width: 36rem;
+  margin: 2rem auto; text-align: center; }
+.notes-empty-how { font-size: 13px; }

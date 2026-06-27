@@ -70,11 +70,44 @@ create index if not exists section_state_user_idx on public.section_state (user_
 -- ---------------------------------------------------------------------------
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.section_state to authenticated;
+grant select, insert, update, delete on public.annotations to authenticated;
 grant select, update on public.profiles to authenticated;
 
 -- ---------------------------------------------------------------------------
+-- annotations: page-level notes and text highlights
+-- ---------------------------------------------------------------------------
+create table if not exists public.annotations (
+  id             uuid primary key default gen_random_uuid(),
+  user_id        uuid not null references auth.users (id) on delete cascade,
+  section_key    text not null,
+  kind           text not null check (kind in ('note','highlight')),
+  body           text,
+  quote          text,
+  prefix         text,
+  suffix         text,
+  text_position  integer,
+  color          text,
+  section_hash   text,
+  title_snapshot text,
+  orphaned       boolean not null default false,
+  deleted        boolean not null default false,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+alter table public.annotations enable row level security;
+
+drop policy if exists "annotations are self-owned" on public.annotations;
+create policy "annotations are self-owned"
+  on public.annotations for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create index if not exists annotations_user_section_idx
+  on public.annotations (user_id, section_key);
+
+-- ---------------------------------------------------------------------------
 -- (Deferred, here for reference — not used by v1)
--- notes:       per-section freeform notes
 -- timer_logs:  "try this for N minutes" practice sessions
--- Both scoped by section_key + user_id with identical RLS.
+-- Scoped by section_key + user_id with identical RLS.
 -- ---------------------------------------------------------------------------

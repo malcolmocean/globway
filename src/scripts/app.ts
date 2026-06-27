@@ -5,6 +5,11 @@
 //   3. Supabase not configured           -> local only (dev / pre-setup).
 import { getSupabase, isConfigured } from '../lib/supabase';
 import tocData from '../data/toc.json';
+import { initAnnotations, pullAnnotations } from './annotations';
+import { initKeyboard, setupKeyboardPage } from './keyboard';
+import { initNotesView } from './notes-view';
+import { initNoteArrival } from './note-arrival';
+import { initSearch } from './search';
 
 type TocNode = { key: string; title: string; depth: number; children: TocNode[] };
 type Entry = { read?: boolean; starred?: boolean; hidden?: boolean; progress?: number; updated_at: string };
@@ -425,6 +430,21 @@ async function copyMd(btn: HTMLElement) {
   copyTimer = window.setTimeout(() => { btn.innerHTML = btn.dataset.label!; }, 1400);
 }
 
+// ---- keyboard host actions --------------------------------------------------
+// The keyboard layer's body bindings for r/*/b/m operate on the *current*
+// section; resolve its key from the article element and reuse toggle()/copyMd().
+function currentSectionKey(): string | null {
+  return document.querySelector<HTMLElement>('[data-section-key]')?.dataset.sectionKey || null;
+}
+function toggleCurrent(field: 'read' | 'starred' | 'hidden') {
+  const key = currentSectionKey();
+  if (key) toggle(key, field);
+}
+function copyMdCurrent() {
+  const btn = document.querySelector<HTMLElement>('[data-action="copy-md"]:not([hidden])');
+  if (btn) copyMd(btn);
+}
+
 // ---- deck presenter (/aux, /p3, /p8) ---------------------------------------
 // One shared presenter for any deck (a list of cards): fetch its JSON once, render
 // one card by ?p=<key> (or ?r=1 for a random card), step with prev/next/random.
@@ -771,16 +791,21 @@ function once() {
   wireControls();   // delegated on document — persists
   wireAuth();       // AuthBar lives in the persistent sidebar
   wireNav();        // toggle/backdrop/sidebar persist; keydown on document
+  // Keyboard navigation: two listeners on persistent elements (document + sidebar),
+  // wired once. Body actions (r/*/b/m) drive the section state via these hosts.
+  initKeyboard({ toggle: toggleCurrent, copyMd: copyMdCurrent });
+  initSearch();        // ⌘K full-text palette (lazy-loads its index on first open)
+  initNoteArrival();   // pre-hide the section across a ?note view-transition (loader)
   registerSW();
   document.querySelector('.sidebar')?.addEventListener('scroll', onSidebarScroll, { passive: true });
   window.addEventListener('resize', () => { computeStickyTops(); updateStickyShadows(); });
   window.addEventListener('load', () => { computeStickyTops(); updateStickyShadows(); }); // re-measure after fonts settle
   if (sb) {
-    getSession().then((session) => { renderAuth(session); pullRemote(); });
-    sb.auth.onAuthStateChange((_evt, session) => { renderAuth(session); pullRemote(); });
+    getSession().then((session) => { renderAuth(session); pullRemote(); pullAnnotations(); });
+    sb.auth.onAuthStateChange((_evt, session) => { renderAuth(session); pullRemote(); pullAnnotations(); });
     // Back online after offline edits? Re-run the merge: pullRemote() pushes any
     // local-newer rows up (last-write-wins) and pulls remote changes down.
-    window.addEventListener('online', () => { pullRemote(); });
+    window.addEventListener('online', () => { pullRemote(); pullAnnotations(); });
   } else {
     renderAuth(null);
   }
@@ -793,10 +818,13 @@ function setupPage() {
   syncCopyButton();
   applyAll();
   initReadTracking(pageAbort.signal);
+  initAnnotations(pageAbort.signal);
+  initNotesView(pageAbort.signal);
   initDeck(pageAbort.signal);
   computeStickyTops();
   scrollSidebarToCurrent();
   updateStickyShadows();
+  setupKeyboardPage();   // drop focus off a clicked sidebar row; reseed roving tabindex
 }
 
 let booted = false;

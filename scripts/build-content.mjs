@@ -9,6 +9,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import MarkdownIt from 'markdown-it';
 import { parse as parseHtml } from 'node-html-parser';
@@ -127,6 +128,7 @@ let sections = located
       kind: slice[0]?.kind || 'main',
       file: slice[0]?.file || '',
       wordcount: plain.split(/\s+/).filter(Boolean).length,
+      contentHash: contentHash(plain),
       aliases: [...aliases],
       html: rewritten,
       // Raw markdown source, kept for the "copy as markdown" button. Dead nav
@@ -235,6 +237,12 @@ fs.writeFileSync(
   }
   fs.writeFileSync(path.join(OUT, 'toc.json'), JSON.stringify(troots, null, 0));
 }
+// Per-section content hashes: powers the annotation staleness fast-path.
+{
+  const hashes = {};
+  for (const s of sections) hashes[s.key] = s.contentHash;
+  fs.writeFileSync(path.join(OUT, 'hashes.json'), JSON.stringify(hashes, null, 0));
+}
 // Decks ship as static assets the presenter fetches once (cached), rather than
 // inlining ~0.5 MB into the page HTML.
 fs.mkdirSync(path.join(ROOT, 'public'), { recursive: true });
@@ -243,6 +251,39 @@ for (const [name, deck] of Object.entries(decks)) {
     path.join(ROOT, 'public', `${name}.json`),
     JSON.stringify({ count: deck.items.length, items: deck.items, preamble: deck.preamble || '', showTitle: deck.showTitle !== false, bodyAsHeading: !!deck.bodyAsHeading }, null, 0)
   );
+}
+
+// ---- 6. Full-text search index (Malcolm's ⌘K). One plaintext record per
+// searchable item — every protocol section (full body), every auxiliary
+// practice, and the p3/p8 prompt cards — shipped as a single static asset the
+// palette fetches *on demand* (first ⌘K only) and feeds to MiniSearch in the
+// browser. Deliberately NOT precached by the service worker (see its EXCLUDE
+// set): users who never search never pay for it; the SW runtime-caches it on
+// first real fetch so it still works offline afterwards. Stored as html-stripped
+// plaintext keyed by {t,key} so the client routes to /s/<key>, /aux?p=<key>, or
+// /p3|p8?p=<key>. See src/scripts/search.ts.
+{
+  const toText = (html) => (parseHtml(html || '').text || '').replace(/\s+/g, ' ').trim();
+  const docs = [];
+  for (const s of sections) {
+    const parent = s.parent ? byKeySection.get(s.parent) : null;
+    docs.push({ id: `s:${s.key}`, t: 's', key: s.key, title: s.title,
+      sub: parent ? parent.title : 'Section', text: toText(s.html) });
+  }
+  for (const p of decks.aux.items)
+    docs.push({ id: `aux:${p.key}`, t: 'aux', key: p.key, title: p.title,
+      sub: 'Auxiliary practice', text: toText(p.html) });
+  for (const p of decks.p3.items)
+    docs.push({ id: `p3:${p.key}`, t: 'p3', key: p.key, title: p.title,
+      sub: 'Practice 3 · prompt', text: toText(p.html) });
+  for (const p of decks.p8.items)
+    docs.push({ id: `p8:${p.key}`, t: 'p8', key: p.key, title: p.title,
+      sub: 'Practice 8 · prompt', text: toText(p.html) });
+  fs.writeFileSync(
+    path.join(ROOT, 'public', 'search.json'),
+    JSON.stringify({ count: docs.length, docs }, null, 0)
+  );
+  console.log(`Wrote search index: ${docs.length} docs.`);
 }
 
 console.log(
@@ -407,7 +448,9 @@ function curateFrontMatter(sections, aliasMap) {
   }
   into.aliases = [...aliases];
   aliasMap[into.key] = into.aliases;
-  into.wordcount = into.html.replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length;
+  const intoPlain = into.html.replace(/<[^>]+>/g, ' ');
+  into.wordcount = intoPlain.split(/\s+/).filter(Boolean).length;
+  into.contentHash = contentHash(intoPlain);
 
   return sections.filter((s) => !removed.has(s.key));
 }
@@ -449,4 +492,12 @@ function decodeEntities(s) {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'");
+}
+
+function normalizePlaintext(text) {
+  return text.normalize('NFC').replace(/\s+/g, ' ').trim();
+}
+
+function contentHash(plaintext) {
+  return crypto.createHash('sha256').update(normalizePlaintext(plaintext)).digest('hex').slice(0, 16);
 }

@@ -14,8 +14,11 @@ import { createHash } from 'node:crypto';
 
 const DIST = new URL('../dist/', import.meta.url).pathname;
 
-// Files we never want to precache or serve from the SW.
-const EXCLUDE = new Set(['sw.js', 'CNAME', '.nojekyll']);
+// Files we never want to precache or serve from the SW. search.json is the
+// full-text index: large and only needed if you actually search, so it's kept
+// out of the install precache and instead lazy-fetched + runtime-cached on the
+// first ⌘K (see src/scripts/search.ts).
+const EXCLUDE = new Set(['sw.js', 'CNAME', '.nojekyll', 'search.json']);
 
 function walk(dir) {
   const out = [];
