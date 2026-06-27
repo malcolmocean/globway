@@ -84,4 +84,9 @@
 
 ## Malcolm's wishlist
 
-- [ ] full text search, something like a C-k interface
+- [x] full text search, something like a C-k interface
+  - ⌘K / Ctrl+K (or the 🔍 pill) opens a command-palette overlay over a MiniSearch
+    index of everything (section bodies + aux + p3/p8). Index ships as
+    public/search.json (gitignored), lazy-loaded + indexed on first open, kept out
+    of the SW precache (runtime-cached after first use). See
+    docs/plans/2026-06-26-full-text-search-design.md.

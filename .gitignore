@@ -6,6 +6,7 @@ src/data/
 public/aux.json
 public/p3.json
 public/p8.json
+public/search.json
 # local env (Supabase keys)
 .env
 .env.local

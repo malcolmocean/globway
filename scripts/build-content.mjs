@@ -253,6 +253,39 @@ for (const [name, deck] of Object.entries(decks)) {
   );
 }
 
+// ---- 6. Full-text search index (Malcolm's ⌘K). One plaintext record per
+// searchable item — every protocol section (full body), every auxiliary
+// practice, and the p3/p8 prompt cards — shipped as a single static asset the
+// palette fetches *on demand* (first ⌘K only) and feeds to MiniSearch in the
+// browser. Deliberately NOT precached by the service worker (see its EXCLUDE
+// set): users who never search never pay for it; the SW runtime-caches it on
+// first real fetch so it still works offline afterwards. Stored as html-stripped
+// plaintext keyed by {t,key} so the client routes to /s/<key>, /aux?p=<key>, or
+// /p3|p8?p=<key>. See src/scripts/search.ts.
+{
+  const toText = (html) => (parseHtml(html || '').text || '').replace(/\s+/g, ' ').trim();
+  const docs = [];
+  for (const s of sections) {
+    const parent = s.parent ? byKeySection.get(s.parent) : null;
+    docs.push({ id: `s:${s.key}`, t: 's', key: s.key, title: s.title,
+      sub: parent ? parent.title : 'Section', text: toText(s.html) });
+  }
+  for (const p of decks.aux.items)
+    docs.push({ id: `aux:${p.key}`, t: 'aux', key: p.key, title: p.title,
+      sub: 'Auxiliary practice', text: toText(p.html) });
+  for (const p of decks.p3.items)
+    docs.push({ id: `p3:${p.key}`, t: 'p3', key: p.key, title: p.title,
+      sub: 'Practice 3 · prompt', text: toText(p.html) });
+  for (const p of decks.p8.items)
+    docs.push({ id: `p8:${p.key}`, t: 'p8', key: p.key, title: p.title,
+      sub: 'Practice 8 · prompt', text: toText(p.html) });
+  fs.writeFileSync(
+    path.join(ROOT, 'public', 'search.json'),
+    JSON.stringify({ count: docs.length, docs }, null, 0)
+  );
+  console.log(`Wrote search index: ${docs.length} docs.`);
+}
+
 console.log(
   `Wrote ${sections.length} sections (${Object.keys(aliasToCanonical).length} anchors). ` +
     `TOC items: ${tocItems.length}, located: ${located.length}. ` +

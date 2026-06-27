@@ -9,6 +9,7 @@ import { initAnnotations, pullAnnotations } from './annotations';
 import { initKeyboard, setupKeyboardPage } from './keyboard';
 import { initNotesView } from './notes-view';
 import { initNoteArrival } from './note-arrival';
+import { initSearch } from './search';
 
 type TocNode = { key: string; title: string; depth: number; children: TocNode[] };
 type Entry = { read?: boolean; starred?: boolean; hidden?: boolean; progress?: number; updated_at: string };
@@ -793,6 +794,7 @@ function once() {
   // Keyboard navigation: two listeners on persistent elements (document + sidebar),
   // wired once. Body actions (r/*/b/m) drive the section state via these hosts.
   initKeyboard({ toggle: toggleCurrent, copyMd: copyMdCurrent });
+  initSearch();        // ⌘K full-text palette (lazy-loads its index on first open)
   initNoteArrival();   // pre-hide the section across a ?note view-transition (loader)
   registerSW();
   document.querySelector('.sidebar')?.addEventListener('scroll', onSidebarScroll, { passive: true });

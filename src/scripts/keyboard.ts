@@ -10,6 +10,7 @@ import {
 import {
   kbNotesMove, kbNotesEnter, kbNotesOpen, kbNotesEdit, kbNotesDelete, kbNotesEscape,
 } from './notes-view';
+import { openSearch } from './search';
 
 // mac vs win/linux, resolved once. `mod` = ⌘ on mac, Ctrl elsewhere — used at
 // both match time (below) and render time (the help overlay), from one table.
@@ -49,6 +50,7 @@ const COMMANDS: Record<string, Command> = {
   'sidebar.focus': { id: 'sidebar.focus', title: 'Focus the sidebar',             run: focusSidebar },
   'mark.next':     { id: 'mark.next',     title: 'Next highlight / note',         run: () => kbStepMark('next') },
   'mark.prev':     { id: 'mark.prev',     title: 'Previous highlight / note',     run: () => kbStepMark('prev') },
+  'search.open':   { id: 'search.open',   title: 'Search the manual',             run: openSearch },
   'help':          { id: 'help',          title: 'Show this help',                run: openHelp },
   'esc':           { id: 'esc',           title: 'Dismiss cursor / selection / active note', run: () => { kbEscape(); } },
   // notes view (/notes) — a virtual cursor over the note cards
@@ -86,6 +88,7 @@ const TABLE: Binding[] = [
   { keys: 'b',             command: 'sec.hide',      scope: 'body', group: 'Section' },
   { keys: 'm',             command: 'sec.md',        scope: 'body', group: 'Section' },
   { keys: 's',             command: 'sidebar.focus', scope: 'body', group: 'Navigation' },
+  { keys: 'mod+k',         command: 'search.open',   scope: 'body', group: 'Search' },
   { keys: '?',             command: 'help',          scope: 'body', group: 'General' },
   { keys: 'Escape',        command: 'esc',           scope: 'body', group: 'General' },
   // sidebar — TOC tree (hjkl and arrows are parallel bindings)
@@ -112,6 +115,7 @@ const TABLE: Binding[] = [
   { keys: 'e',         command: 'notes.edit',   scope: 'notes', group: 'Notes view' },
   { keys: 'd',         command: 'notes.delete', scope: 'notes', group: 'Notes view' },
   { keys: 's',         command: 'sidebar.focus', scope: 'notes', group: 'Notes view' },
+  { keys: 'mod+k',     command: 'search.open',  scope: 'notes', group: 'Search' },
   { keys: '?',         command: 'help',         scope: 'notes', group: 'General' },
   { keys: 'Escape',    command: 'notes.esc',    scope: 'notes', group: 'Notes view' },
 ];
@@ -164,6 +168,7 @@ const bodyBindings = TABLE.filter(b => b.scope === 'body').map(b => ({ ...b, par
 const sidebarBindings = TABLE.filter(b => b.scope === 'sidebar').map(b => ({ ...b, parsed: parseKeys(b.keys) }));
 const notesBindings = TABLE.filter(b => b.scope === 'notes').map(b => ({ ...b, parsed: parseKeys(b.keys) }));
 const HELP_PARSED = parseKeys('?');
+const SEARCH_PARSED = parseKeys('mod+k');
 
 // True on the all-notes page (/notes). Its document scope belongs to the notes
 // cursor, not the article-reading bindings (there's no article body there).
@@ -174,7 +179,7 @@ function onNotesPage(): boolean { return !!document.querySelector('[data-notes-v
 // descendant at any depth, so no widget has to cooperate.
 function navGuardBail(e: KeyboardEvent): boolean {
   const t = e.target as HTMLElement | null;
-  return !!t && !!t.closest('input, textarea, [contenteditable], [role="dialog"], .kbd-help-overlay');
+  return !!t && !!t.closest('input, textarea, [contenteditable], [role="dialog"], .kbd-help-overlay, .search-overlay');
 }
 
 // ---- body (document) listener -----------------------------------------------
@@ -196,6 +201,7 @@ function onBodyKey(e: KeyboardEvent) {
 // ---- sidebar listener -------------------------------------------------------
 function onSidebarKey(e: KeyboardEvent) {
   if (navGuardBail(e)) return;                                    // e.g. the AuthBar email field
+  if (bindingMatches(e, SEARCH_PARSED)) { e.preventDefault(); openSearch(); return; } // ⌘K works sidebar-wide
   if (bindingMatches(e, HELP_PARSED)) { e.preventDefault(); openHelp(); return; } // ? works sidebar-wide
   const row = (e.target as HTMLElement).closest<HTMLElement>('a.row[data-row-key]');
   if (!row) return;                                              // not on a row → let it bubble
