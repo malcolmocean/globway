@@ -7,7 +7,7 @@ import hashData from '../data/hashes.json';
 const aliasToCanonical: Record<string, string> = aliasData.aliasToCanonical;
 const sectionHashes: Record<string, string> = hashData as Record<string, string>;
 
-type Annotation = {
+export type Annotation = {
   id: string;
   section_key: string;
   kind: 'note' | 'highlight' | 'para';
@@ -76,8 +76,15 @@ function displayBody(n: Annotation): string | null {
 // rail reads these to position cards beside their targets.
 const anchorEl: Record<string, HTMLElement> = {};
 
-function resolveKey(key: string): string {
+export function resolveKey(key: string): string {
   return aliasToCanonical[key] || key;
+}
+
+// Every live (non-deleted) annotation, for cross-section consumers like the
+// all-notes view. Returns the same in-memory objects this module mutates, so an
+// edit/delete made elsewhere is reflected when a section page next renders.
+export function getAllAnnotations(): Annotation[] {
+  return Object.values(annotations).filter(a => !a.deleted);
 }
 
 function forSection(key: string): Annotation[] {
@@ -147,7 +154,7 @@ function pageFor(key: string): Annotation[] {
 // ============================================================================
 
 // ---- plaintext normalization ------------------------------------------------
-function normalizePlaintext(text: string): string {
+export function normalizePlaintext(text: string): string {
   return text.normalize('NFC').replace(/\s+/g, ' ').trim();
 }
 
@@ -624,7 +631,7 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   }
 });
 
-function md(src: string | null): string {
+export function md(src: string | null): string {
   const s = src == null ? '' : String(src);
   if (!s.trim()) return '';
   const html = marked.parse(s, { async: false }) as string;
@@ -731,6 +738,8 @@ async function pullAnnotations() {
 
   annotations = remote;
   saveLocal(annotations);
+  // Let cross-section consumers (the all-notes view) re-render with the merged set.
+  document.dispatchEvent(new Event('globway:annotations-pulled'));
   // A pull can land after the section already rendered (it's async and may be
   // triggered by a late sign-in / coming back online). Re-render so freshly
   // pulled annotations actually appear, mirroring pullRemote()'s applyAll().
@@ -784,7 +793,7 @@ function createAnnotation(fields: {
   return ann;
 }
 
-function updateAnnotation(id: string, changes: Partial<Pick<Annotation, 'body' | 'color' | 'quote' | 'prefix' | 'suffix' | 'text_position'>>) {
+export function updateAnnotation(id: string, changes: Partial<Pick<Annotation, 'body' | 'color' | 'quote' | 'prefix' | 'suffix' | 'text_position'>>) {
   const ann = annotations[id];
   if (!ann) return;
   Object.assign(ann, changes, { updated_at: new Date().toISOString() });
@@ -792,7 +801,7 @@ function updateAnnotation(id: string, changes: Partial<Pick<Annotation, 'body' |
   syncAnnotation(ann);
 }
 
-function deleteAnnotation(id: string) {
+export function deleteAnnotation(id: string) {
   const ann = annotations[id];
   if (!ann) return;
   ann.deleted = true;

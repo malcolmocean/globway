@@ -7,6 +7,7 @@ import { getSupabase, isConfigured } from '../lib/supabase';
 import tocData from '../data/toc.json';
 import { initAnnotations, pullAnnotations } from './annotations';
 import { initKeyboard, setupKeyboardPage } from './keyboard';
+import { initNotesView } from './notes-view';
 
 type TocNode = { key: string; title: string; depth: number; children: TocNode[] };
 type Entry = { read?: boolean; starred?: boolean; hidden?: boolean; progress?: number; updated_at: string };
@@ -814,6 +815,7 @@ function setupPage() {
   applyAll();
   initReadTracking(pageAbort.signal);
   initAnnotations(pageAbort.signal);
+  initNotesView(pageAbort.signal);
   initDeck(pageAbort.signal);
   computeStickyTops();
   scrollSidebarToCurrent();
