@@ -81,3 +81,7 @@
 	- grouping/sorting: by section order, by recency; filter highlights vs notes vs
 	  page notes; maybe starred-only. the "see everything I've marked up" home that
 	  complements the per-section rail.
+
+## Malcolm's wishlist
+
+- [ ] full text search, something like a C-k interface
