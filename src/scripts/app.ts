@@ -10,6 +10,7 @@ import { initKeyboard, setupKeyboardPage } from './keyboard';
 import { initNotesView } from './notes-view';
 import { initNoteArrival } from './note-arrival';
 import { initSearch } from './search';
+import { navigate } from 'astro:transitions/client';
 
 type TocNode = { key: string; title: string; depth: number; children: TocNode[] };
 type Entry = { read?: boolean; starred?: boolean; hidden?: boolean; progress?: number; updated_at: string };
@@ -243,12 +244,18 @@ function orderedRows() {
   });
   return out;
 }
+// A dice draw lands on an arbitrary section, so centring the sidebar on it (as a
+// normal navigation does) would yank the dice buttons out from under the cursor on
+// every roll. Flag random nav so setupPage() leaves the sidebar scroll alone.
+let randomNav = false;
 /** Random section drawn from the CURRENT filter view (page/starred/unread/…). */
 function randomInView() {
   const f = currentFilter();
   const candidates = orderedRows().filter((r) => rowMatches(r.key, f));
   if (!candidates.length) return;
-  location.href = candidates[Math.floor(Math.random() * candidates.length)].href;
+  const href = candidates[Math.floor(Math.random() * candidates.length)].href;
+  randomNav = true;        // suppress scroll-to-current for this hop (see setupPage)
+  navigate(href);          // client-router hop → dark cross-fade, no white reload flash
 }
 /** On a section page, recompute prev/next to skip hidden sections. */
 function updatePager() {
@@ -822,7 +829,15 @@ function setupPage() {
   initNotesView(pageAbort.signal);
   initDeck(pageAbort.signal);
   computeStickyTops();
-  scrollSidebarToCurrent();
+  // Random draws keep the sidebar where it is (scrolled to top) so spamming the
+  // dice doesn't make the buttons jump around; everything else centres the current row.
+  if (randomNav) {
+    randomNav = false;
+    const sidebar = document.querySelector<HTMLElement>('.sidebar');
+    if (sidebar) sidebar.scrollTop = 0;
+  } else {
+    scrollSidebarToCurrent();
+  }
   updateStickyShadows();
   setupKeyboardPage();   // drop focus off a clicked sidebar row; reseed roving tabindex
 }
