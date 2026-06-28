@@ -829,17 +829,20 @@ function setupPage() {
   initNotesView(pageAbort.signal);
   initDeck(pageAbort.signal);
   computeStickyTops();
-  // Random draws keep the sidebar where it is (scrolled to top) so spamming the
-  // dice doesn't make the buttons jump around; everything else centres the current row.
+  // A normal navigation centres the current row; a dice draw leaves the sidebar
+  // alone (see the scrollTop=0 below) so spamming the dice doesn't scroll the
+  // buttons away under the cursor.
+  if (!randomNav) scrollSidebarToCurrent();
+  updateStickyShadows();
+  setupKeyboardPage();   // drop focus off a clicked sidebar row; reseed roving tabindex
+  // Pin the sidebar to the top on a dice draw. Must run AFTER setupKeyboardPage(),
+  // whose setRoving() calls scrollIntoView() on the (random) current row and would
+  // otherwise scroll the dice buttons out of view.
   if (randomNav) {
     randomNav = false;
     const sidebar = document.querySelector<HTMLElement>('.sidebar');
     if (sidebar) sidebar.scrollTop = 0;
-  } else {
-    scrollSidebarToCurrent();
   }
-  updateStickyShadows();
-  setupKeyboardPage();   // drop focus off a clicked sidebar row; reseed roving tabindex
 }
 
 let booted = false;
