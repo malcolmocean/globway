@@ -391,7 +391,10 @@ export function setupKeyboardPage() {
   // was clicked / Enter'd. Drop it back to <body> so you land in reading state.
   const a = document.activeElement as HTMLElement | null;
   if (a && a.matches?.('a.row[data-row-key]')) a.blur();
-  // Seed the roving tabindex on the current page's row so Tab enters the TOC there.
+  // Seed the roving tabindex on the current page's row so Tab enters the TOC there,
+  // and move the remembered cursor to it: navigating (clicking a TOC link, following
+  // a body link, Enter on a row) all land on a new page, so `s` should focus *this*
+  // page in the TOC — not wherever the cursor was parked before you navigated away.
   const cur = currentRow();
-  if (cur) setRoving(cur);
+  if (cur) { setRoving(cur); rememberedRow = cur; }
 }
