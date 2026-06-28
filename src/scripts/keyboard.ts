@@ -387,10 +387,13 @@ export function initKeyboard(h: KeyboardHost) {
 }
 
 export function setupKeyboardPage() {
-  // After a navigation, focus may be stranded on the (persisted) sidebar row that
-  // was clicked / Enter'd. Drop it back to <body> so you land in reading state.
+  // After a navigation, focus may be stranded on whatever in the (persisted) sidebar
+  // triggered it — a clicked TOC row, the brand link, or a dice/draw control (these
+  // now navigate client-side instead of full-reloading, so focus no longer resets).
+  // Drop it back to <body> so you land in reading state; otherwise the body key
+  // listener ignores `s` (and every reading key) while focus sits inside the sidebar.
   const a = document.activeElement as HTMLElement | null;
-  if (a && a.matches?.('a.row[data-row-key]')) a.blur();
+  if (a?.closest?.('.sidebar') && !a.matches('input, textarea, [contenteditable]')) a.blur();
   // Seed the roving tabindex on the current page's row so Tab enters the TOC there,
   // and move the remembered cursor to it: navigating (clicking a TOC link, following
   // a body link, Enter on a row) all land on a new page, so `s` should focus *this*
