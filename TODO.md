@@ -94,3 +94,7 @@
     public/search.json (gitignored), lazy-loaded + indexed on first open, kept out
     of the SW precache (runtime-cached after first use). See
     docs/plans/2026-06-26-full-text-search-design.md.
+
+## Bugs
+
+- [ ] Appendix 1 has a very long ul with no actual text content
