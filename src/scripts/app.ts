@@ -537,6 +537,9 @@ async function initDeck(signal: AbortSignal) {
     const t = e.target as HTMLElement;
     const nav = t.closest<HTMLAnchorElement>('[data-deck-prev],[data-deck-next]');
     if (nav && !nav.hidden) {
+      // Let modifier / middle clicks open the real ?p=<key> href natively (new
+      // tab/window), same as a regular section link — only intercept a plain click.
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       e.preventDefault();
       const k = new URL(nav.href).searchParams.get('p');
       if (k) go(k);
