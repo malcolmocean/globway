@@ -1028,8 +1028,11 @@ function focusEditor(id: string) {
 
 // ---- layout: position cards beside their targets ----------------------------
 function headerBottom(): number {
-  const sh = currentContainer?.closest('.content')?.querySelector('.section-head');
-  const b = sh ? sh.getBoundingClientRect().bottom : 0;
+  // The pinned element is now the controls bar (the heading scrolls away); keep cards
+  // clear of whichever of it / the header is lowest on screen.
+  const content = currentContainer?.closest('.content');
+  const bar = content?.querySelector(':scope > .controls') ?? content?.querySelector('.section-head');
+  const b = bar ? bar.getBoundingClientRect().bottom : 0;
   return Math.max(b + 12, 24);
 }
 

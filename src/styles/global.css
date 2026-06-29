@@ -120,7 +120,7 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
   }
   body.nav-open .sidebar { transform: translateX(0); }
   .nav-toggle {
-    display: inline-flex; align-items: center; gap: .4rem; position: fixed; top: .6rem; left: .6rem; z-index: 60;
+    display: inline-flex; align-items: center; gap: .4rem; position: fixed; top: .6rem; left: .6rem; z-index: 45;
     font: 600 13px/1 ui-sans-serif, system-ui, sans-serif; cursor: pointer;
     padding: .5rem .7rem; border-radius: 999px; border: 1px solid var(--line);
     background: var(--bg-elev); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.12);
@@ -296,36 +296,40 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .crumbs { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px; color: var(--muted); margin-bottom: .25rem; }
 .crumbs a { color: var(--muted); }
 
-/* Sticky header band in the main column: breadcrumbs + heading + read/star/hide
-   pin to the top of the viewport while reading a long section. The heading is
-   lifted out of the article body (see s/[key].astro) so it travels with the
-   controls, which float to the right of it on the same row. */
-.section-head {
-  /* Above the side-rail cards (z 6–24) so they scroll *under* the sticky header
-     instead of covering the top-bar controls; still below the floating popups
-     (z 90) and the mobile drawer toggle (z 60). */
-  position: sticky; top: 0; z-index: 40;
-  /* Bleed the background a few px into the side gutters (negative margin balanced
-     by padding, so the header content doesn't shift) — otherwise a paragraph
-     note's tint/outline box, which sits ~6–7px wider than the text column on each
-     side, peeks out past the header's edges as the paragraph scrolls under it. */
-  background: var(--bg); margin: 0 -8px 1.2rem;
-  padding: .5rem 8px .5rem; border-bottom: 1px solid var(--line);
-}
+/* Section header. The breadcrumbs + heading scroll away with the article; only the
+   read/star/hide/.md controls pin to the top while you read.
+   Tradeoff: we previously pinned the whole header, but section titles are often
+   3–6 lines (and much taller on mobile), so a pinned full title overlapped the
+   article on every page for little benefit. Letting it scroll and pinning just the
+   controls keeps the actions reachable without the title eating the viewport. */
+.section-head { margin: 0 0 .5rem; }
+/* Left-aligned, no responsive indent: the header now scrolls at its natural position
+   (below the fixed ☰, thanks to .main's mobile padding-top) rather than pinned at y=0,
+   so the breadcrumbs no longer need to dodge the toggle. */
 .section-head .crumbs { margin-bottom: .3rem; }
-.section-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
-.section-head-row .section-h { flex: 1; min-width: 0; }
-.section-head-row .section-h :is(h1, p) { margin: 0; }
-.section-head-row .controls { flex: none; margin: .1rem 0 0; }
+.section-head .section-h :is(h1, p) { margin: 0; }
+
+/* The pinned controls bar — section pages only (not the deck presenter, .content.deck).
+   Bleeds a few px into the gutters so it reads as a full-width band; sits above the
+   side-rail cards (z 6–24) but below the floating popups (z 90) and the mobile drawer
+   toggle (z 60). */
+.content:not(.deck) > .controls {
+  position: sticky; top: 0; z-index: 40;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+  margin: .1rem -8px 1.4rem; padding: .5rem 8px;
+}
 @media (max-width: 800px) {
-  /* Drop the controls onto their own row below the heading; nudge the band clear
-     of the floating ☰ Contents button (fixed top-left). The heading is forced to
-     full width (flex-basis:100%) — otherwise its `flex:1; min-width:0` lets it
-     shrink to one-character-per-line to keep the controls beside it, instead of
-     wrapping them below. */
-  .section-head .crumbs { padding-left: 6.2rem; min-height: 1.4rem; }
-  .section-head-row { flex-wrap: wrap; }
-  .section-head-row .section-h { flex-basis: 100%; }
+  /* The pinned controls bar shares the top row with the fixed ☰ toggle: right-align
+     and tighten the controls so they sit clear of it. */
+  .content:not(.deck) > .controls { justify-content: flex-end; gap: .3rem; }
+  .content:not(.deck) > .controls button { padding: .3rem .55rem; font-size: 13px; }
+}
+@media (max-width: 399px) {
+  /* Measured: "☰ Contents" + all four controls only fit on one row down to ~400px
+     (≈9px gap; comfortable ≥412). Below that the toggle drops to an icon (its
+     aria-label still names it) and the crumbs only need to clear that small button —
+     so the label stays for Pixel/larger phones and collapses on iPhone-12-class & SE. */
+  .nav-toggle-label { display: none; }
 }
 
 /* article */

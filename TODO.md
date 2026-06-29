@@ -75,14 +75,14 @@
 	- grouping/sorting: by section order, by recency; filter highlights vs notes vs
 	  page notes; maybe starred-only. the "see everything I've marked up" home that
 	  complements the per-section rail.
-- [ ] r/*/etc seem to be broken?
-- [ ] section title wraps poorly — the big serif h1 stacks into a tall narrow
+- [x] r/*/etc seem to be broken?
+- [x] section title wraps poorly — the big serif h1 stacks into a tall narrow
   column next to the read/star/hide/.md controls. fix the wrapping / sizing /
   layout of the section header (not caused by the notes work). 
 - [ ] aux pages you can't C-click on the next aux practice. note this works fine for the regular sections
+- [ ] font options, some slightly ricier fonts, variously nice and clean
 - [ ] incremental reading stuff
   - I'm not sure I understand "actual" incremental reading, but probably something which surfaces old notes (your own notes and highlights) at some intervals
-- [ ] font options, some slightly ricier fonts, variously nice and clean
 
 
 

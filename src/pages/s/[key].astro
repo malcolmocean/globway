@@ -78,13 +78,11 @@ const kids = childrenOf(s.key);
           ))}
         </div>
       )}
-      <div class="section-head-row">
-        {headingHtml
-          ? <div class="section-h" set:html={headingHtml} />
-          : <div class="section-h"><h1>{s.title}</h1></div>}
-        <SectionControls sectionKey={s.key} />
-      </div>
+      {headingHtml
+        ? <div class="section-h" set:html={headingHtml} />
+        : <div class="section-h"><h1>{s.title}</h1></div>}
     </div>
+    <SectionControls sectionKey={s.key} />
     <div class="annot-row" data-annot-row>
       <div class="annot-body" data-annot-body set:html={bodyHtml} />
       <div class="annot-rail" data-annot-rail aria-hidden="true"></div>
