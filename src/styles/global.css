@@ -42,6 +42,35 @@
    white canvas — a white flash in dark mode. `color-scheme` makes the UA canvas
    follow the theme, and the explicit background covers any unpainted root. */
 html { scroll-behavior: smooth; background: var(--bg); color-scheme: light dark; }
+/* The flash culprit: Chrome/Firefox capture the cross-fade *snapshots* with a
+   transparent background, so a swapped page can fade in over the UA's white canvas —
+   a white/grey flash in dark mode (the overlay-root background sits behind the
+   snapshot, not behind the canvas it composites onto, so it doesn't help). Paint the
+   theme background on the snapshots so every frame stays dark. Headless Chromium
+   captures them opaque, which is why it never reproduced. */
+::view-transition { background: var(--bg); }
+/* Snap the rest of the page — no cross-fade. The persisted sidebar carries no
+   transition-name (Astro just moves the node), so it lives in the `root` snapshot;
+   snapping it makes the highlight switch sharply instead of blending old↔new at half
+   opacity. */
+::view-transition-old(root), ::view-transition-new(root) { background-color: var(--bg); animation: none; }
+
+/* Article-column loading choreography:
+   1. On nav start (before the fetch) html.gw-navigating blanks <main> to dark, so the
+      fetch reads as an immediate "loading" state — a VT alone can't do this, since it
+      only animates the post-fetch swap.
+   2. <main> has its own transition name, so only it animates (sidebar/bg snap). The
+      OLD snapshot is the blank (opacity:0), matching the live pre-fetch blank.
+   3. app.ts clears gw-navigating in astro:before-swap — after the old snapshot is
+      captured, before the new one — so the NEW snapshot holds real content, which the
+      VT fades in over the blank. Letting the VT own the fade avoids the snapshot↔live
+      mismatch that a manual post-swap fade caused (a full→blank→fade flicker). */
+.main { view-transition-name: gw-main; }
+html.gw-navigating .main { opacity: 0; }
+::view-transition-group(gw-main) { animation: none; }                 /* no size morph */
+::view-transition-old(gw-main) { animation: none; opacity: 0; }       /* old = dark blank */
+::view-transition-new(gw-main) { animation: gw-section-in .12s ease both; background-color: var(--bg); }
+@keyframes gw-section-in { from { opacity: 0; } to { opacity: 1; } }
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font-family: ui-serif, Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;

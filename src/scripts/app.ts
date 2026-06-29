@@ -846,12 +846,23 @@ function setupPage() {
 }
 
 let booted = false;
+// Blank the article column the instant a navigation starts (before the fetch), so the
+// load reads as an immediate dark "loading" state; page-load clears it and the new
+// section fades in. The class rides on <html>, which survives the swap. See the
+// `.main` / `html.gw-navigating` rules in global.css.
+document.addEventListener('astro:before-preparation', () => {
+  document.documentElement.classList.add('gw-navigating');
+});
 // astro:page-load fires on the initial load AND after every client-side swap.
 document.addEventListener('astro:page-load', () => {
+  document.documentElement.classList.remove('gw-navigating');   // safety net
   if (!booted) { booted = true; once(); }
   setupPage();
 });
 // Leaving a section page client-side fires no `pagehide`; flush its progress here.
 document.addEventListener('astro:before-swap', () => {
   if (trackKey) syncRow(trackKey);
+  // Clear the pre-fetch blank now — after the OLD snapshot is captured (blank), before
+  // the NEW one — so the new <main> snapshot holds real content for the VT to fade in.
+  document.documentElement.classList.remove('gw-navigating');
 });

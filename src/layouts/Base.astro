@@ -20,6 +20,10 @@ const description =
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {/* Paint the root background at the very first frame — before global.css parses —
+        so a full document load never flashes the UA's white canvas in dark mode.
+        Hardcoded to match :root --bg (light) and the dark-scheme override. */}
+    <style>{`html{background:#faf9f7}@media(prefers-color-scheme:dark){html{background:#18161a}}`}</style>
     <title>{pageTitle}</title>
     <meta name="color-scheme" content="light dark" />
     <meta name="description" content={description} />
