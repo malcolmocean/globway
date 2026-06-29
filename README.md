@@ -37,6 +37,9 @@ npm run build      # static site into dist/
 Copy `.env.example` → `.env.local` and fill in Supabase keys to test sync locally
 (optional — it works without).
 
+[`CLAUDE.md`](CLAUDE.md) documents the architecture, conventions, and gotchas for
+working in the codebase (and orients Claude Code).
+
 ## Deploy
 
 Pushing to `main` triggers `.github/workflows/deploy.yml` (build → GitHub Pages).
