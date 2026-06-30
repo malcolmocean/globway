@@ -351,16 +351,36 @@ function helpGroups(): Map<string, Map<string, { title: string; keys: string[] }
   return out;
 }
 
+// MANUALLY MAINTAINED — not auto-generated from the keymap. These shortcuts are
+// handled inside the note textarea's own keydown listener (annotations.ts →
+// focusEditor), not the TABLE, because navGuardBail deliberately makes the nav
+// listeners ignore every keystroke while a field is focused. So they can't be
+// discovered the way the rest of the `?` list is, and must be kept in sync by
+// hand: if you change or remove the save / cancel / fullscreen bindings in
+// focusEditor, edit (or delete) the matching row here.
+const EDITOR_HELP: { name: string; rows: { keys: string; title: string }[] } = {
+  name: 'Note editor',
+  rows: [
+    { keys: 'mod+Enter', title: 'Save note' },
+    { keys: 'Escape',    title: 'Cancel editing — or exit fullscreen first' },
+    { keys: 'alt+Enter', title: 'Toggle fullscreen editor' },
+  ],
+};
+
 let helpEl: HTMLElement | null = null;
 function openHelp() {
   if (helpEl) return;
-  const sections = [...helpGroups()].map(([name, cmds]) => {
-    const rows = [...cmds.values()].map(c =>
+  const renderSection = (name: string, rows: { keys: string[]; title: string }[]) => {
+    const html = rows.map(r =>
       `<div class="kbd-row"><span class="kbd-keys">`
-      + c.keys.map(renderKeys).join('<span class="kbd-or">/</span>')
-      + `</span><span class="kbd-title">${escapeHtml(c.title)}</span></div>`).join('');
-    return `<section class="kbd-group"><h3>${escapeHtml(name)}</h3>${rows}</section>`;
-  }).join('');
+      + r.keys.map(renderKeys).join('<span class="kbd-or">/</span>')
+      + `</span><span class="kbd-title">${escapeHtml(r.title)}</span></div>`).join('');
+    return `<section class="kbd-group"><h3>${escapeHtml(name)}</h3>${html}</section>`;
+  };
+  const sections = [...helpGroups()].map(([name, cmds]) =>
+    renderSection(name, [...cmds.values()].map(c => ({ keys: c.keys, title: c.title })))
+  ).join('')
+    + renderSection(EDITOR_HELP.name, EDITOR_HELP.rows.map(r => ({ keys: [r.keys], title: r.title })));
   helpEl = document.createElement('div');
   helpEl.className = 'kbd-help-overlay';
   helpEl.tabIndex = -1;

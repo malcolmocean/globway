@@ -839,6 +839,11 @@ const cardRefs: Record<string, HTMLElement> = {};  // noteId -> rail card / wrap
 
 let activeId: string | null = null;
 let editingId: string | null = null;
+// The note whose editor is blown up to a full-viewport sheet (null = none), plus
+// the dimming backdrop behind it. Promotion is purely visual (a class on the live
+// card) so the textarea node — and its listeners / value / draft — stay put.
+let fullscreenId: string | null = null;
+let fsBackdrop: HTMLElement | null = null;
 let isNew = false;            // editing a just-created note → Cancel discards it
 let pageCollapsed = false;
 let narrow = false;
@@ -873,6 +878,9 @@ function anchorLabel(n: Annotation): string {
 // ---- render: rail contents --------------------------------------------------
 function refresh() {
   if (!currentContainer || !currentSectionKey || !railEl) return;
+  // A rebuild discards the promoted card node, so any fullscreen session that's no
+  // longer the live edit (saved / cancelled / switched away) must tear down first.
+  if (fullscreenId && fullscreenId !== editingId) setFullscreen(null);
   gcEmptyNotes();   // drop empty notes abandoned via switch / reload (not the one being edited)
   renderHighlights(currentContainer, currentSectionKey);
   renderParas(currentContainer, currentSectionKey);
@@ -902,14 +910,16 @@ function buildCard(n: Annotation): HTMLElement {
   const label = anchored ? `<div class="ann-anchor-label">${escapeHtml(anchorLabel(n))}</div>` : '';
 
   if (editing) {
+    if (fullscreenId === n.id) card.classList.add('is-fullscreen');
     // Seed the field from the draft if there's unsaved work, else the saved body.
     const seed = draft ? (getDraft(n.id) || '') : (n.body || '');
     card.innerHTML = label
       + `<textarea class="ann-textarea" data-editor="${n.id}" placeholder="Write a note… Markdown supported">${escapeHtml(seed)}</textarea>`
-      + `<div class="ann-md-hint">Full Markdown — headings, lists, tables, \`code\`, [links](url) · ⌘/Ctrl+Enter to save · Esc to cancel`
+      + `<div class="ann-md-hint">Full Markdown — headings, lists, tables, \`code\`, [links](url) · ⌘/Ctrl+Enter to save · Esc to cancel · ⌥/Alt+Enter fullscreen`
       + `<span class="ann-draft-flag" data-draft-flag="${n.id}"${draft ? '' : ' hidden'}> · draft autosaved</span></div>`
       + `<div class="ann-editor-actions"><button type="button" class="ann-save" data-save="${n.id}">Save</button>`
-      + `<button type="button" class="ann-cancel" data-cancel="${n.id}">Cancel</button></div>`;
+      + `<button type="button" class="ann-cancel" data-cancel="${n.id}">Cancel</button>`
+      + `<button type="button" class="ann-fs-btn" data-fs="${n.id}" title="Fullscreen (⌥/Alt+Enter)" aria-label="Toggle fullscreen editor">⛶</button></div>`;
     return card;
   }
 
@@ -1016,6 +1026,13 @@ function applyActiveStates() {
 // card height changes, so re-run layout() to keep rail cards from overlapping,
 // then scroll so the caret (the field's bottom, where you're typing) stays in view.
 function autoGrowEditor(ta: HTMLTextAreaElement) {
+  // Fullscreen: the field flexes to fill the sheet (CSS), so drop the measured
+  // height and the rail-scroll bookkeeping — neither applies to a fixed overlay.
+  if (fullscreenId && ta.dataset.editor === fullscreenId) {
+    ta.style.height = '';
+    ta.style.overflowY = 'auto';
+    return;
+  }
   ta.style.height = 'auto';
   const cap = Math.max(120, Math.round(window.innerHeight * 0.54));
   const h = Math.min(ta.scrollHeight, cap);
@@ -1046,8 +1063,55 @@ function keepEditorCaretVisible(ta: HTMLTextAreaElement) {
   }
 }
 
+// The editor textarea by id, searched document-wide — the node is the same whether
+// it sits in the rail or has been re-parented into the fullscreen backdrop.
+function editorEl(id: string | null): HTMLTextAreaElement | null {
+  return id ? document.querySelector<HTMLTextAreaElement>(`[data-editor="${id}"]`) : null;
+}
+
+// Promote the live editor card to a full-viewport sheet (or back). The card node
+// is *moved* into a body-level backdrop (so it always paints above the dim,
+// regardless of the low-z-index stacking context the rail wrapper sits in) and
+// moved back to its original slot on exit. The node itself is unchanged, so its
+// listeners / value / autosaved draft survive the move; `editorEl()` finds it in
+// either place. Pass null to exit. Always re-focuses + re-sizes the field.
+let fsHome: { parent: Node; next: Node | null } | null = null;
+function setFullscreen(id: string | null) {
+  // Tear down whatever's currently promoted: un-class it and return it home.
+  const promoted = document.querySelector<HTMLElement>('.ann-card.is-fullscreen');
+  if (promoted) {
+    promoted.classList.remove('is-fullscreen');
+    if (fsHome) fsHome.parent.insertBefore(promoted, fsHome.next);
+  }
+  fsHome = null;
+  fsBackdrop?.remove(); fsBackdrop = null;
+  document.body.classList.remove('ann-fs-open');
+
+  fullscreenId = id;
+  if (id) {
+    const ta = editorEl(id);
+    const card = ta?.closest<HTMLElement>('.ann-card');
+    if (!ta || !card) { fullscreenId = null; return; }
+    fsBackdrop = document.createElement('div');
+    fsBackdrop.className = 'ann-fs-backdrop';
+    fsBackdrop.addEventListener('mousedown', e => { if (e.target === fsBackdrop) setFullscreen(null); });
+    // The card carries Save/Cancel/⛶ buttons; the rail's delegated handler won't
+    // see them once the card is re-parented, so run the same delegation here.
+    fsBackdrop.addEventListener('click', onRailClick as EventListener);
+    document.body.appendChild(fsBackdrop);
+    fsHome = { parent: card.parentNode!, next: card.nextSibling };
+    card.classList.add('is-fullscreen');
+    fsBackdrop.appendChild(card);
+    document.body.classList.add('ann-fs-open');
+    ta.focus(); autoGrowEditor(ta);
+  } else if (editingId) {
+    const ta = editorEl(editingId);
+    if (ta) { ta.focus(); autoGrowEditor(ta); }
+  }
+}
+
 function focusEditor(id: string) {
-  const ta = railEl?.querySelector<HTMLTextAreaElement>(`[data-editor="${id}"]`);
+  const ta = editorEl(id);
   if (!ta) return;
   ta.focus();
   try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch {}
@@ -1064,7 +1128,13 @@ function focusEditor(id: string) {
   });
   ta.addEventListener('keydown', (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); saveNote(id); }
-    else if (e.key === 'Escape') { e.preventDefault(); requestCancel(id); }
+    else if (e.altKey && e.key === 'Enter') { e.preventDefault(); setFullscreen(fullscreenId === id ? null : id); }
+    // Esc ladder rungs 1–2 for the editor: collapse fullscreen first, then cancel.
+    else if (e.key === 'Escape') {
+      e.preventDefault();
+      if (fullscreenId === id) setFullscreen(null);
+      else requestCancel(id);
+    }
   });
   if (!narrow && pageListEl && pageListEl.contains(ta)) {
     const card = cardRefs[id];
@@ -1247,7 +1317,7 @@ function openEdit(id: string) {
   refresh();
 }
 function saveNote(id: string) {
-  const ta = railEl?.querySelector<HTMLTextAreaElement>(`[data-editor="${id}"]`);
+  const ta = editorEl(id);
   const val = ta ? ta.value : '';
   const ann = annotations[id];
   editingId = null;
@@ -1269,14 +1339,14 @@ function saveNote(id: string) {
 // navigating away does NOT discard — the draft is autosaved for next time;
 // only an explicit cancel destroys it, and only with a confirmation.)
 function requestCancel(id: string) {
-  const ta = railEl?.querySelector<HTMLTextAreaElement>(`[data-editor="${id}"]`);
+  const ta = editorEl(id);
   const ann = annotations[id];
   const val = ta ? ta.value : '';
   const dirty = val.trim() !== (ann?.body || '').trim();
   if (!dirty) { cancelNote(id); return; }
   confirmDiscard().then(discard => {
     if (discard) cancelNote(id);
-    else railEl?.querySelector<HTMLTextAreaElement>(`[data-editor="${id}"]`)?.focus();
+    else editorEl(id)?.focus();
   });
 }
 function cancelNote(id: string) {
@@ -1404,6 +1474,8 @@ function onRailClick(e: MouseEvent) {
   if (sv) { saveNote(sv.dataset.save!); return; }
   const cn = t.closest<HTMLElement>('[data-cancel]');
   if (cn) { requestCancel(cn.dataset.cancel!); return; }
+  const fs = t.closest<HTMLElement>('[data-fs]');
+  if (fs) { e.stopPropagation(); const id = fs.dataset.fs!; setFullscreen(fullscreenId === id ? null : id); return; }
   if (t.closest('[data-add-page]')) { e.stopPropagation(); addPageNote(); return; }
   if (t.closest('[data-toggle-page]')) {
     pageCollapsed = !pageCollapsed;
@@ -1915,6 +1987,8 @@ export function initAnnotations(signal: AbortSignal) {
     paraFabBlock = null;
     if (hideFabTimer) { clearTimeout(hideFabTimer); hideFabTimer = null; }
     mq?.removeEventListener('change', onMq);
+    fsBackdrop?.remove(); fsBackdrop = null; fullscreenId = null;
+    document.body.classList.remove('ann-fs-open');
     if (currentContainer) { clearMarks(currentContainer); clearParaOutlines(currentContainer); }
     currentContainer = null; currentSectionKey = null;
     bodyEl = null; rowEl = null; railEl = null;

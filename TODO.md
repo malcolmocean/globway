@@ -110,10 +110,20 @@
     typing. It currently only grows to ~2–3 lines, which is stupid — the UI
     should afford writing arbitrarily long notes. → textarea auto-grows to fit
     content (capped ~60vh, then scrolls).
-  - [ ] **fullscreen / journal editor**: a way to have a close-to-fullscreen (or
+  - [x] **fullscreen / journal editor**: a way to have a close-to-fullscreen (or
     just fullscreen) editor. Likely a single button + kb macro while the editor
     is active → a fullscreen journal. For now keep it a vanilla `<textarea>`, but
-    open to shipping a really good editor if it adds <0.5MB to the artifact.
+    open to shipping a really good editor if it adds <0.5MB to the artifact. →
+    ⛶ button in the editor actions + ⌥/Alt+Enter toggles a centered full-viewport
+    sheet over a backdrop. Vanilla textarea kept (decided against any library;
+    CM6 would ~2× the JS for features we don't want). Implemented by re-parenting
+    the live card node into the backdrop (escapes the rail's low-z stacking
+    context) and back on exit; Esc collapses fullscreen before cancelling.
+  - [ ] **kb: reach *existing* page notes**: `p` already creates+focuses a *new*
+    page note, but there's no kb way to focus / step through the *existing* ones —
+    alt-j/k only walks anchored highlight/para marks, so the PAGE NOTES panel is
+    mouse-only for opening notes already in it. Add a binding to jump into the
+    page-notes panel and cycle its entries (open → edit via `e`).
 - [ ] font options, some slightly ricier fonts, variously nice and clean
 - [ ] incremental reading stuff
   - I'm not sure I understand "actual" incremental reading, but probably something which surfaces old notes (your own notes and highlights) at some intervals
