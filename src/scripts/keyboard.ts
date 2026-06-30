@@ -319,17 +319,17 @@ function escapeHtml(s: string): string {
 function renderKeys(keys: string): string {
   const glyph = (part: string): string => {
     switch (part) {
-      case 'mod':   return IS_MAC ? '⌘' : 'Ctrl';
-      case 'alt':   return IS_MAC ? '⌥' : 'Alt';
-      case 'shift': return IS_MAC ? '⇧' : 'Shift';
-      case 'ctrl':  return 'Ctrl';
+      case 'mod':   return IS_MAC ? '⌘' : 'ctrl';
+      case 'alt':   return IS_MAC ? '⌥' : 'alt';
+      case 'shift': return IS_MAC ? '⇧' : 'shift';
+      case 'ctrl':  return 'ctrl';
       case 'meta':  return '⌘';
       case 'ArrowDown':  return '↓';
       case 'ArrowUp':    return '↑';
       case 'ArrowLeft':  return '←';
       case 'ArrowRight': return '→';
-      case 'Enter':  return IS_MAC ? '↵' : 'Enter';
-      case 'Escape': return 'Esc';
+      case 'Enter':  return IS_MAC ? '↵' : 'enter';
+      case 'Escape': return 'esc';
       // Single-char keys are bound lowercase (no Shift) — render them lowercase so
       // the hint matches the actual keystroke (E would imply Shift+e).
       default: return part.length === 1 ? part.toLowerCase() : part;
