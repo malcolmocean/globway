@@ -78,7 +78,9 @@ const COMMANDS: Record<string, Command> = {
 const TABLE: Binding[] = [
   // body — article reading & actions
   { keys: 'j',             command: 'focus.next',    scope: 'body', group: 'Reading' },
+  { keys: 'alt+ArrowDown', command: 'focus.next',    scope: 'body', group: 'Reading' },
   { keys: 'k',             command: 'focus.prev',    scope: 'body', group: 'Reading' },
+  { keys: 'alt+ArrowUp',   command: 'focus.prev',    scope: 'body', group: 'Reading' },
   { keys: 'h',             command: 'ann.highlight', scope: 'body', group: 'Annotate' },
   { keys: 'n',             command: 'ann.note',      scope: 'body', group: 'Annotate' },
   { keys: 'p',             command: 'page.note',     scope: 'body', group: 'Annotate' },
