@@ -346,7 +346,11 @@ function helpGroups(): Map<string, Map<string, { title: string; keys: string[] }
     if (!out.has(b.group)) out.set(b.group, new Map());
     const g = out.get(b.group)!;
     if (!g.has(b.command)) g.set(b.command, { title: cmd.title, keys: [] });
-    g.get(b.command)!.keys.push(b.keys);
+    // A command bound identically in more than one scope (e.g. mod+k for search in
+    // both body and notes) would otherwise list the same key twice; keep only
+    // genuinely distinct alternates (alt+j / mod+↓).
+    const entry = g.get(b.command)!;
+    if (!entry.keys.includes(b.keys)) entry.keys.push(b.keys);
   }
   return out;
 }
