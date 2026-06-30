@@ -91,16 +91,16 @@
     margin ends up huge even if there's a ton of room. Cards should use the
     available rail width. → `--rail-w` 20→22rem, plus responsive bumps to 26rem
     (≥1500px) / 30rem (≥1850px) so the rail grows with the viewport.
-  - [ ] **kb: open the note for where the cursor already is**: if the virtual
+  - [x] **kb: open the note for where the cursor already is**: if the virtual
     cursor is already over a highlighted paragraph, there's no way with the kb to
     open that note *except* by hitting e.g. alt-j, which is stupid / has bad
     ergonomics.
     - relatedly there's sort of no way to open a highlight note with the kb
       either except alt-j or the related ones. Maybe this is fine? But there
       should be better ergonomics possible.
-    - [x] partial: `e` now opens the editor on the currently-open note (added to
-      the keymap table → shows in the `?` overlay). Still TODO: a binding to open
-      a note straight from the paragraph the cursor is on without alt-j.
+    - [x] `e` opens the editor on the currently-open note (in the keymap table →
+      shows in the `?` overlay). And `o` ("Open note in this paragraph") opens the
+      note straight from the paragraph the cursor is on, without alt-j.
   - [x] **open-state outline too subtle**: the change in the outline on the
     paragraph when you *open* a paragraph note is too modest. Especially
     illegible on 1.5x hidpi scaling, but even at 2x it kinda sux. Make the
@@ -119,11 +119,14 @@
     CM6 would ~2× the JS for features we don't want). Implemented by re-parenting
     the live card node into the backdrop (escapes the rail's low-z stacking
     context) and back on exit; Esc collapses fullscreen before cancelling.
-  - [ ] **kb: reach *existing* page notes**: `p` already creates+focuses a *new*
+  - [x] **kb: reach *existing* page notes**: `p` already creates+focuses a *new*
     page note, but there's no kb way to focus / step through the *existing* ones —
     alt-j/k only walks anchored highlight/para marks, so the PAGE NOTES panel is
-    mouse-only for opening notes already in it. Add a binding to jump into the
-    page-notes panel and cycle its entries (open → edit via `e`).
+    mouse-only for opening notes already in it. → alt-j/k now cycle page notes
+    (and orphans) too: they sort after every anchored mark and the cycle wraps, so
+    alt-k from the top lands on them; landing reveals the panel + scrolls within
+    it + shows the active ring, and `e` edits.
+  - [ ] there should be a way to fullscreen a rendered note, not just fullscreen the editor. really alt-enter on an open not (not in editor) should fullscreen it as well, this is good for *viewing* very long notes. and some button to make this easy I guess, tho maybe it's distracting. maybe just add the binding but no button lol
 - [ ] font options, some slightly ricier fonts, variously nice and clean
 - [ ] incremental reading stuff
   - I'm not sure I understand "actual" incremental reading, but probably something which surfaces old notes (your own notes and highlights) at some intervals

@@ -902,7 +902,7 @@ function buildCard(n: Annotation): HTMLElement {
   const draft = hasDraft(n);
   card.className = 'ann-card'
     + (n.kind === 'para' ? ' is-para' : n.kind === 'highlight' ? ' is-hl' : ' is-page')
-    + (anchored && active ? ' is-active' : '')
+    + (active ? ' is-active' : '')   // anchored cards + bottom-panel page notes/orphans
     + (editing ? ' is-editing' : '')
     + (draft ? ' has-draft' : '');
   card.dataset.cardId = n.id;
@@ -1249,6 +1249,14 @@ function railBounds() {
 function ensureVisible(id: string) {
   const el = cardRefs[id];
   if (!el || el.style.display === 'none') return;
+  // Page notes / orphans sit in the fixed, bottom-pinned panel (always on-screen),
+  // which scrolls internally — move its list, not the window.
+  if (pageListEl && pageListEl.contains(el)) {
+    const er = el.getBoundingClientRect(), pr = pageListEl.getBoundingClientRect();
+    if (er.top < pr.top + 4) pageListEl.scrollTop += er.top - pr.top - 6;
+    else if (er.bottom > pr.bottom - 4) pageListEl.scrollTop += er.bottom - pr.bottom + 6;
+    return;
+  }
   const { top, bottom } = railBounds();
   const topGuard = narrow ? 78 : top;
   const botGuard = (narrow ? window.innerHeight : bottom) - 12;
@@ -1838,18 +1846,31 @@ function kbNavMarks(): Annotation[] {
       return 0;
     });
 }
-// alt+j/k, mod+↓/↑. Land on a mark = activate it + scroll its rail card into the
-// band (ensureVisible). Bare highlights have no card, so nudge the mark itself in.
+// The full alt+j/k cycle: anchored marks in text order, then the page notes (and
+// orphans) that live in the bottom panel. Page notes have no in-text anchor, so
+// they sort *after* every positioned mark — stepping forward walks the page, then
+// drops into the page notes; stepping back from the top lands on them directly.
+function kbStepList(): Annotation[] {
+  if (!currentSectionKey) return [];
+  return [...kbNavMarks(), ...pageFor(currentSectionKey)];
+}
+
+// alt+j/k, mod+↓/↑. Land on a mark/note = activate it + scroll it into view
+// (ensureVisible handles rail card vs. bottom-panel; bare highlights have no card,
+// so nudge the mark itself in). The cycle wraps, so alt-k from the top reaches the
+// page notes at the bottom and alt-j past the last one returns to the top.
 export function kbStepMark(dir: 'next' | 'prev') {
-  const list = kbNavMarks();
+  const list = kbStepList();
   if (!list.length) return;
   const i = activeId ? list.findIndex(a => a.id === activeId) : -1;
-  const ni = i < 0 ? (dir === 'next' ? 0 : list.length - 1) : (dir === 'next' ? i + 1 : i - 1);
-  if (ni < 0 || ni >= list.length) return;
-  const id = list[ni].id;
-  pendingScroll = id;           // consumed by refresh() -> ensureVisible (carded notes)
-  setActive(id);
-  if (!cardRefs[id]) requestAnimationFrame(() => kbScrollAnchor(id));
+  const ni = i < 0
+    ? (dir === 'next' ? 0 : list.length - 1)
+    : (dir === 'next' ? i + 1 : i - 1 + list.length) % list.length;
+  const target = list[ni];
+  if (target.kind === 'note' || target.orphaned) pageCollapsed = false;  // reveal its panel
+  pendingScroll = target.id;    // consumed by refresh() -> ensureVisible
+  setActive(target.id);
+  if (!cardRefs[target.id]) requestAnimationFrame(() => kbScrollAnchor(target.id));
 }
 function kbScrollAnchor(id: string) {
   const el = anchorEl[id];
