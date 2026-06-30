@@ -386,9 +386,10 @@ function openHelp() {
   helpEl.tabIndex = -1;
   helpEl.innerHTML =
     `<div class="kbd-help" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">`
+    + `<div class="kbd-help-scroll">`
     + `<div class="kbd-help-head"><h2>Keyboard shortcuts</h2>`
     + `<button type="button" class="kbd-close" aria-label="Close help">×</button></div>`
-    + `<div class="kbd-grid">${sections}</div></div>`;
+    + `<div class="kbd-grid">${sections}</div></div></div>`;
   document.body.appendChild(helpEl);
   // Own every key while up (it carries role="dialog" + is in the guard): close on
   // Esc or ?, swallow the rest so nothing leaks to the body listener beneath.

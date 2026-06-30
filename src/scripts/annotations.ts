@@ -914,7 +914,7 @@ function buildCard(n: Annotation): HTMLElement {
     // Seed the field from the draft if there's unsaved work, else the saved body.
     const seed = draft ? (getDraft(n.id) || '') : (n.body || '');
     card.innerHTML = label
-      + `<textarea class="ann-textarea" data-editor="${n.id}" placeholder="Write a note… Markdown supported">${escapeHtml(seed)}</textarea>`
+      + `<div class="ann-ta-wrap"><textarea class="ann-textarea" data-editor="${n.id}" placeholder="Write a note… Markdown supported">${escapeHtml(seed)}</textarea></div>`
       + `<div class="ann-md-hint">Full Markdown — headings, lists, tables, \`code\`, [links](url) · ⌘/Ctrl+Enter to save · Esc to cancel · ⌥/Alt+Enter fullscreen`
       + `<span class="ann-draft-flag" data-draft-flag="${n.id}"${draft ? '' : ' hidden'}> · draft autosaved</span></div>`
       + `<div class="ann-editor-actions"><button type="button" class="ann-save" data-save="${n.id}">Save</button>`
