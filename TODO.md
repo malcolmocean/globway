@@ -80,6 +80,40 @@
   column next to the read/star/hide/.md controls. fix the wrapping / sizing /
   layout of the section header (not caused by the notes work). 
 - [x] aux pages you can't C-click on the next aux practice. note this works fine for the regular sections
+- [ ] notes & note-editing rework (2026-06-29 batch)
+  - [x] **edit/delete buttons layout**: currently the edit and delete buttons on
+    notes are horizontal, even on shorter notes on desktop mode — this is both
+    ugly and uses up constrained space in the right gutter. At minimum, in full
+    desktop mode they should be vertically arranged. → stacked vertically in
+    general (`.ann-card-tools` is now `flex-direction: column`).
+  - [x] **gutter width**: notes in the right gutter don't even take up the full
+    width of the gutter! And not like, well there's just a bit of margin — the
+    margin ends up huge even if there's a ton of room. Cards should use the
+    available rail width. → `--rail-w` 20→22rem, plus responsive bumps to 26rem
+    (≥1500px) / 30rem (≥1850px) so the rail grows with the viewport.
+  - [ ] **kb: open the note for where the cursor already is**: if the virtual
+    cursor is already over a highlighted paragraph, there's no way with the kb to
+    open that note *except* by hitting e.g. alt-j, which is stupid / has bad
+    ergonomics.
+    - relatedly there's sort of no way to open a highlight note with the kb
+      either except alt-j or the related ones. Maybe this is fine? But there
+      should be better ergonomics possible.
+    - [x] partial: `e` now opens the editor on the currently-open note (added to
+      the keymap table → shows in the `?` overlay). Still TODO: a binding to open
+      a note straight from the paragraph the cursor is on without alt-j.
+  - [x] **open-state outline too subtle**: the change in the outline on the
+    paragraph when you *open* a paragraph note is too modest. Especially
+    illegible on 1.5x hidpi scaling, but even at 2x it kinda sux. Make the
+    open/active affordance much more visible. → active state now gets a stronger
+    tint (`--para-strong`) + a halo box-shadow + 3px outline.
+  - [x] **auto-resize editor**: the note editor should auto-resize while you're
+    typing. It currently only grows to ~2–3 lines, which is stupid — the UI
+    should afford writing arbitrarily long notes. → textarea auto-grows to fit
+    content (capped ~60vh, then scrolls).
+  - [ ] **fullscreen / journal editor**: a way to have a close-to-fullscreen (or
+    just fullscreen) editor. Likely a single button + kb macro while the editor
+    is active → a fullscreen journal. For now keep it a vanilla `<textarea>`, but
+    open to shipping a really good editor if it adds <0.5MB to the artifact.
 - [ ] font options, some slightly ricier fonts, variously nice and clean
 - [ ] incremental reading stuff
   - I'm not sure I understand "actual" incremental reading, but probably something which surfaces old notes (your own notes and highlights) at some intervals

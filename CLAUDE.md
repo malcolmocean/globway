@@ -34,7 +34,11 @@ Don't hand-edit `src/data/*.json` — they're generated. Change the source or th
   `{ signal }` to per-page listeners so they tear down on navigation.
 - **`keyboard.ts`** — declarative keymap; "where am I" is whatever has real focus
   (body / sidebar / notes), no mode machine. Full rationale:
-  `docs/plans/2026-06-26-kb-navigation-architecture.md`.
+  `docs/plans/2026-06-26-kb-navigation-architecture.md`. The `?` help overlay is
+  **generated from the `TABLE`/`COMMANDS` keymap** — add or change a binding there
+  (with its `COMMANDS` entry + `group`) and the help list updates itself. Never
+  hand-maintain a separate shortcut list, and when you add a key, make sure it
+  lands in the table so `?` stays in sync.
 - **Decks** (`Presenter.astro` + `initDeck` in app.ts) — prev/next are real anchors
   with `?p=<key>` hrefs; a delegated click handler intercepts plain clicks for
   client-side paging but lets modified/middle clicks through (see below).

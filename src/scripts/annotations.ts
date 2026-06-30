@@ -917,10 +917,19 @@ function buildCard(n: Annotation): HTMLElement {
     ? `<div class="ann-detached">detached${n.quote ? ` · “${escapeHtml(n.quote.length > 80 ? n.quote.slice(0, 80) + '…' : n.quote)}”` : ''}</div>`
     : '';
   const badge = draft ? `<span class="ann-draft-badge">unsaved draft</span>` : '';
-  const tools = `<div class="ann-card-tools">`
-    + `<button type="button" class="ann-icon-btn" data-edit="${n.id}" title="Edit">✎</button>`
-    + `<button type="button" class="ann-icon-btn ann-del" data-delete="${n.id}" title="Delete">×</button></div>`;
-  card.innerHTML = label + orphan + badge
+  const editBtn = `<button type="button" class="ann-icon-btn" data-edit="${n.id}" title="Edit">✎</button>`;
+  const delBtn = `<button type="button" class="ann-icon-btn ann-del" data-delete="${n.id}" title="Delete">×</button>`;
+  const tools = `<div class="ann-card-tools">${editBtn}${delBtn}</div>`;
+  if (anchored) {
+    // Grid: quote (truncated) over body in col 1 (the body drives the width), with
+    // the two buttons grouped in a single col-2 cell spanning both rows — so their
+    // spacing is controlled inside .ann-card-tools, independent of the row heights.
+    card.innerHTML = badge
+      + `<div class="ann-card-grid">${label}`
+      + `<div class="ann-md">${md(displayBody(n))}</div>${tools}</div>`;
+    return card;
+  }
+  card.innerHTML = orphan + badge
     + `<div class="ann-card-row"><div class="ann-md">${md(displayBody(n))}</div>${tools}</div>`;
   return card;
 }
@@ -1002,16 +1011,53 @@ function applyActiveStates() {
   });
 }
 
+// Grow the editor to fit its content so notes of any length are comfortable —
+// no fixed 2–3 line cap. Bounded at ~54vh, past which it scrolls internally; the
+// card height changes, so re-run layout() to keep rail cards from overlapping,
+// then scroll so the caret (the field's bottom, where you're typing) stays in view.
+function autoGrowEditor(ta: HTMLTextAreaElement) {
+  ta.style.height = 'auto';
+  const cap = Math.max(120, Math.round(window.innerHeight * 0.54));
+  const h = Math.min(ta.scrollHeight, cap);
+  ta.style.height = h + 'px';
+  ta.style.overflowY = ta.scrollHeight > cap ? 'auto' : 'hidden';
+  layout();
+  keepEditorCaretVisible(ta);
+}
+
+// Keep the growing editor's caret-end visible. A bottom-pinned page note grows
+// upward inside its own fixed, scrollable panel — pin its scroll to the bottom so
+// the newest line shows. An anchored rail card grows downward from its anchor —
+// scroll the window so the field's bottom clears the visible band (the bottom-
+// pinned page panel on wide screens, the viewport edge when narrow), without
+// shoving its top above the sticky header.
+function keepEditorCaretVisible(ta: HTMLTextAreaElement) {
+  if (pageListEl && pageListEl.contains(ta)) {
+    pageListEl.scrollTop = pageListEl.scrollHeight;
+    return;
+  }
+  const r = ta.getBoundingClientRect();
+  const { top, bottom } = railBounds();
+  const botGuard = (narrow ? window.innerHeight : bottom) - 16;
+  const topGuard = (narrow ? 78 : top) + 8;
+  if (r.bottom > botGuard) {
+    const delta = Math.min(r.bottom - botGuard, Math.max(0, r.top - topGuard));
+    if (delta > 1) window.scrollBy({ top: delta, behavior: 'auto' });
+  }
+}
+
 function focusEditor(id: string) {
   const ta = railEl?.querySelector<HTMLTextAreaElement>(`[data-editor="${id}"]`);
   if (!ta) return;
   ta.focus();
   try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch {}
+  autoGrowEditor(ta);
   // Autosave a draft on every keystroke (synchronously to localStorage, so even
   // an abrupt tab close keeps the latest text), and reveal the "draft autosaved"
   // flag once the text diverges from what's committed.
   ta.addEventListener('input', () => {
     setDraft(id, ta.value);
+    autoGrowEditor(ta);
     const ann = annotations[id];
     const flag = railEl?.querySelector<HTMLElement>(`[data-draft-flag="${id}"]`);
     if (flag) flag.toggleAttribute('hidden', !(ann && ta.value !== (ann.body || '')));
@@ -1770,6 +1816,32 @@ function scrollNoteIntoBand(id: string) {
   const r = el.getBoundingClientRect();
   const target = Math.max(0, window.scrollY + r.top - headerBottom() - 24);
   window.scrollTo({ top: target, behavior: 'auto' });   // instant; the loader masks it
+}
+
+// e: open the editor on the currently-active note (the open card / mark), if one
+// is open and not already being edited. Returns whether it acted, so the key only
+// swallows itself when it does something.
+export function kbEditActive(): boolean {
+  if (activeId && !editingId && annotations[activeId]) { openEdit(activeId); return true; }
+  return false;
+}
+
+// o: activate the first mark/note *inside the paragraph under the virtual cursor*
+// — same "first" ordering alt-j/k use (kbNavMarks: by text position, paragraph
+// mark before the highlight it contains). Lets you open a note for where you
+// already are instead of stepping alt-j from wherever the last active note was.
+// Returns whether it acted.
+export function kbOpenNoteInCursor(): boolean {
+  if (!kbCursor || !kbCursor.isConnected) return false;
+  const here = kbNavMarks().find(a => {
+    const el = anchorEl[a.id];
+    return !!el && (el === kbCursor || kbCursor!.contains(el));
+  });
+  if (!here) return false;
+  pendingScroll = here.id;        // carded notes: refresh() -> ensureVisible
+  setActive(here.id);
+  if (!cardRefs[here.id]) requestAnimationFrame(() => kbScrollAnchor(here.id));  // bare mark
+  return true;
 }
 
 // Esc ladder rungs 3–5 (rungs 1–2 — modal/editor — are owned by the focused

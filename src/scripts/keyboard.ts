@@ -5,7 +5,8 @@
 // machine: "where am I" is whatever has focus. See
 // docs/plans/2026-06-26-kb-navigation-architecture.md.
 import {
-  kbFocusBlock, kbHighlight, kbNote, kbPageNote, kbStepMark, kbEscape,
+  kbFocusBlock, kbHighlight, kbNote, kbPageNote, kbStepMark, kbEditActive,
+  kbOpenNoteInCursor, kbEscape,
 } from './annotations';
 import {
   kbNotesMove, kbNotesEnter, kbNotesOpen, kbNotesEdit, kbNotesDelete, kbNotesEscape,
@@ -50,6 +51,8 @@ const COMMANDS: Record<string, Command> = {
   'sidebar.focus': { id: 'sidebar.focus', title: 'Focus the sidebar',             run: focusSidebar },
   'mark.next':     { id: 'mark.next',     title: 'Next highlight / note',         run: () => kbStepMark('next') },
   'mark.prev':     { id: 'mark.prev',     title: 'Previous highlight / note',     run: () => kbStepMark('prev') },
+  'ann.edit':      { id: 'ann.edit',      title: 'Edit the open note',            run: () => { kbEditActive(); } },
+  'ann.open':      { id: 'ann.open',      title: 'Open note in this paragraph',   run: () => { kbOpenNoteInCursor(); } },
   'search.open':   { id: 'search.open',   title: 'Search the manual',             run: openSearch },
   'help':          { id: 'help',          title: 'Show this help',                run: openHelp },
   'esc':           { id: 'esc',           title: 'Dismiss cursor / selection / active note', run: () => { kbEscape(); } },
@@ -83,6 +86,8 @@ const TABLE: Binding[] = [
   { keys: 'mod+ArrowDown', command: 'mark.next',     scope: 'body', group: 'Annotate' },
   { keys: 'alt+k',         command: 'mark.prev',     scope: 'body', group: 'Annotate' },
   { keys: 'mod+ArrowUp',   command: 'mark.prev',     scope: 'body', group: 'Annotate' },
+  { keys: 'e',             command: 'ann.edit',      scope: 'body', group: 'Annotate' },
+  { keys: 'o',             command: 'ann.open',      scope: 'body', group: 'Annotate' },
   { keys: 'r',             command: 'sec.read',      scope: 'body', group: 'Section' },
   { keys: '*',             command: 'sec.star',      scope: 'body', group: 'Section' },
   { keys: 'b',             command: 'sec.hide',      scope: 'body', group: 'Section' },
@@ -190,6 +195,8 @@ function onBodyKey(e: KeyboardEvent) {
   for (const b of bodyBindings) {
     if (!bindingMatches(e, b.parsed)) continue;
     if (b.command === 'esc') { if (kbEscape()) e.preventDefault(); return; }
+    if (b.command === 'ann.edit') { if (kbEditActive()) e.preventDefault(); return; }
+    if (b.command === 'ann.open') { if (kbOpenNoteInCursor()) e.preventDefault(); return; }
     e.preventDefault();
     COMMANDS[b.command]?.run();
     return;
@@ -323,7 +330,9 @@ function renderKeys(keys: string): string {
       case 'ArrowRight': return '→';
       case 'Enter':  return IS_MAC ? '↵' : 'Enter';
       case 'Escape': return 'Esc';
-      default: return part.length === 1 ? part.toUpperCase() : part;
+      // Single-char keys are bound lowercase (no Shift) — render them lowercase so
+      // the hint matches the actual keystroke (E would imply Shift+e).
+      default: return part.length === 1 ? part.toLowerCase() : part;
     }
   };
   return keys.split('+').map(p => `<kbd>${escapeHtml(glyph(p))}</kbd>`).join(IS_MAC ? '' : '+');

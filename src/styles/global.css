@@ -11,11 +11,11 @@
   --star: #d99a09;
   --star-tint: #fbf3dd;
   --maxw: 46rem;
-  --rail-w: 20rem;
+  --rail-w: 20rem;   /* the rail's *minimum* width; it flex-grows past this to fill the gutter */
   --sidebar-w: 20rem;
   /* annotations: single highlight + paragraph-note tints */
   --hl: rgba(246, 221, 86, .5); --hl-strong: rgba(246, 221, 86, .82);
-  --hl-edge: #e3c441; --para: rgba(47, 111, 219, .10); --para-edge: #2f6fdb;
+  --hl-edge: #e3c441; --para: rgba(47, 111, 219, .10); --para-strong: rgba(47, 111, 219, .22); --para-edge: #2f6fdb;
   --card: var(--bg-elev);
   --sidebar-pad: .75rem;
   /* drop-shadow under a pinned sidebar parent that's hiding content */
@@ -29,7 +29,7 @@
     --muted: #9b938b; --line: #322e36; --accent: #79a8a9; --read: #4ec38c;
     --read-tint: #16291f; --star: #e8b73b; --star-tint: #2a2412;
     --hl: rgba(227, 196, 65, .22); --hl-strong: rgba(227, 196, 65, .4);
-    --hl-edge: rgba(227, 196, 65, .6); --para: rgba(130, 170, 235, .16); --para-edge: rgba(140, 175, 235, .82);
+    --hl-edge: rgba(227, 196, 65, .6); --para: rgba(130, 170, 235, .16); --para-strong: rgba(130, 170, 235, .22); --para-edge: rgba(140, 175, 235, .82);
     --card: #23202a;
     /* black shadows vanish on the near-black sidebar, and a heavy one muddies the
        text below — use a soft accent-tinted glow instead to lift the pinned row. */
@@ -391,17 +391,27 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
 .para-anchor::after { content: ''; position: absolute; inset: -3px -4px; z-index: -1;
   background: var(--para); border-radius: 6px; pointer-events: none;
   outline: 2px solid var(--para-edge); }
-.para-anchor.is-active::after { outline-width: 3px; }
+.para-anchor.is-active::after { background: var(--para-strong); outline-width: 3px; }
 
 @media (min-width: 1200px) {
-  .content { max-width: calc(var(--maxw) + var(--rail-w) + 2.5rem); }
+  /* Let .content fill the available main column instead of capping at a fixed
+     body+rail width and centering — that stranded the rail in a big dead right
+     margin. The body keeps its reading measure (--maxw) and is prioritised up to
+     it; the rail flex-grows to fill whatever's left (the gutter), so notes use all
+     the room there is, down to a --rail-w floor (the body yields below that). */
+  .content { max-width: none; }
   .annot-row { display: flex; align-items: flex-start; gap: 2.5rem; }
-  .annot-body { flex: 1; min-width: 0; max-width: var(--maxw); }
-  .annot-rail { position: relative; width: var(--rail-w); flex: none; margin-top: 0; }
+  .annot-body { flex: 0 1 var(--maxw); min-width: 0; max-width: var(--maxw); }
+  .annot-rail { position: relative; flex: 1 1 0; min-width: var(--rail-w); margin-top: 0; }
   /* keep the chrome below the row aligned under the body column, not the rail */
   .content > .subtoc, .content > .pager, .content > .meta { max-width: var(--maxw); }
 }
-
+@media (max-width: 1199px) {
+  /* Narrow mode: an anchored note overlays under its paragraph, spanning the text
+     column. A short (fit-content) card would jam to the left edge — center it on
+     the column instead, with a sensible minimum so tiny notes aren't cramped. */
+  .ann-anchored .ann-card { margin-inline: auto; min-width: min(150px, 100%); }
+}
 /* fixed page-notes panel */
 .ann-page-panel { background: var(--bg-elev); border: 1px solid var(--line); border-radius: 12px;
   box-shadow: 0 1px 3px rgba(0,0,0,.07); overflow: hidden; }
@@ -416,12 +426,26 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
 
 /* cards */
 .ann-card { position: relative; background: var(--card); border: 1px solid var(--line);
-  border-left: 3px solid var(--accent); border-radius: 9px; padding: .5rem .7rem;
+  border-left: 3px solid var(--accent); border-radius: 9px; padding: .5rem calc(.7rem - 2px) .5rem .7rem;
   box-shadow: 0 1px 2px rgba(0,0,0,.04); margin-bottom: .45rem; }
 .ann-card.is-hl { border-left-color: var(--hl-edge); }
 .ann-card.is-para { border-left-color: var(--para-edge); }
 .ann-card.is-active { box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 0 0 1px var(--para-edge); }
+/* Short notes shouldn't sprawl across the whole gutter — shrink the card to its
+   content, capped at the rail width. The editor (is-editing) stays full width so
+   the textarea has room to type. */
+.ann-card:not(.is-editing) { width: fit-content; max-width: 100%; }
+.ann-pill { width: fit-content; max-width: 100%; }
 .ann-card-row { display: flex; align-items: flex-start; gap: .5rem; }
+/* anchored card: quote over body in col 1 (the body drives the width — the quote
+   truncates to it, see .ann-anchor-label), with both buttons grouped in a single
+   col-2 cell that spans both rows, so their spacing lives in .ann-card-tools. */
+.ann-card-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto; column-gap: .5rem; row-gap: 0; align-items: start; }
+.ann-card-grid > .ann-anchor-label { margin-bottom: 0; align-self: center; }
+.ann-card-grid > .ann-md { padding-block: 6px; }
+.ann-card-grid > .ann-card-tools { grid-column: 2; grid-row: 1 / -1;
+  align-self: start; }
 .ann-md { flex: 1; min-width: 0; font-size: 14px; line-height: 1.5; color: var(--text); word-wrap: break-word; }
 /* full GFM rendering: tighten the first/last block so the card doesn't gain
    stray top/bottom space, then give every other element sane spacing for the
@@ -447,15 +471,45 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
 .ann-md th, .ann-md td { border: 1px solid var(--line); padding: .2em .5em; text-align: left; }
 .ann-md th { background: var(--bg); font-weight: 600; }
 .ann-md a { color: var(--accent); }
-.ann-anchor-label { font-size: 11.5px; color: var(--muted); font-style: italic; margin-bottom: .4rem; line-height: 1.4; }
+/* The quoted-anchor line shouldn't dictate the card's width. width:0 + min-width:100%
+   makes it contribute ~nothing to the card's intrinsic (fit-content) width — so the
+   body text drives the width — then it stretches back to the resolved card width and
+   truncates to a single ellipsised line. Short note → narrow card → quote truncates
+   readily; long note → wider card → more of the quote shows. */
+.ann-anchor-label { font-size: 11.5px; color: var(--muted); font-style: italic; margin-bottom: .4rem; line-height: 1.4;
+  width: 0; min-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ann-detached { font-size: 11px; color: #b4673a; margin-bottom: .35rem; }
-.ann-card-tools { display: flex; gap: .15rem; flex: none; margin: -2px -3px 0 0; }
+/* The edit/delete pair sits in a subtly-tinted rounded pill, so the group reads as
+   distinct from the card. Equal 3px padding inside and 3px gap between the buttons
+   gives an even rhythm. */
+.ann-card-tools { display: flex; flex-direction: column; gap: 0; flex: none;
+  padding: 3px; border-radius: 10px; background: color-mix(in srgb, var(--line) 45%, transparent); }
+.ann-card-tools .ann-icon-btn { font-size: 19px; }
 
 .ann-icon-btn { border: 0; background: transparent; color: var(--muted); cursor: pointer;
   width: 26px; height: 26px; border-radius: 7px; font-size: 15px; line-height: 1;
   display: inline-flex; align-items: center; justify-content: center; transition: background .12s, color .12s; }
 .ann-icon-btn:hover { background: var(--bg); color: var(--text); }
 .ann-del:hover { background: color-mix(in srgb, #c0392b 14%, transparent); color: #c0392b; }
+/* edit-button hover: lighter than the pill tint — near-white in light mode, a soft
+   light lift (rather than a dark hole) in dark mode. */
+.ann-card-tools .ann-icon-btn:not(.ann-del):hover { background: color-mix(in srgb, var(--bg-elev) 80%, var(--line)); }
+@media (prefers-color-scheme: dark) {
+  /* darker than the card (recessed feel), but lighter than --bg's near-black so it
+     isn't as extreme as before */
+  .ann-card-tools .ann-icon-btn:not(.ann-del):hover { background: color-mix(in srgb, var(--bg) 55%, var(--card)); }
+}
+
+/* Touch input (any size): roomier card and finger-sized edit/delete targets — the
+   26px desktop buttons are too small to tap reliably. Keyed on pointer type, not
+   viewport width, so a touch tablet gets them too. Placed after the base card rules
+   so these win on source order (equal specificity would otherwise let the base
+   .ann-card padding override the touch one). */
+@media (pointer: coarse) {
+  .ann-card { padding: calc(.8rem - 2px) calc(1rem - 4px) calc(.8rem - 2px) calc(1rem - 2px); }
+  .ann-card-tools { gap: 3px; }
+  .ann-card-tools .ann-icon-btn { width: 32px; height: 32px; font-size: 21px; border-radius: 9px; }
+}
 
 /* collapsed preview pill */
 .ann-pill { display: flex; align-items: center; gap: .55rem; cursor: pointer;
@@ -472,7 +526,7 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* editor */
-.ann-textarea { width: 100%; min-height: 58px; resize: vertical; font: inherit; font-size: 14px;
+.ann-textarea { width: 100%; min-height: 58px; resize: none; overflow-y: hidden; font: inherit; font-size: 14px;
   line-height: 1.45; padding: .45rem .55rem; border: 1px solid var(--accent); border-radius: 7px;
   background: var(--bg); color: var(--text); outline: none; }
 .ann-md-hint { font-size: 10.5px; color: var(--muted); margin: .35rem 0 .45rem; }
