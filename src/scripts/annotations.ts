@@ -1505,20 +1505,31 @@ function onSelectionChange() {
 }
 
 function showSelectionPopup(rect: DOMRect) {
+  // Touch: the OS selection toolbar (Android/iOS) floats beside the selection —
+  // exactly where our above-the-selection placement lands — and can't be
+  // suppressed from a web page. So on coarse pointers dock the popup at the
+  // bottom of the viewport (CSS .is-docked), where the two can never collide.
+  const docked = window.matchMedia('(pointer: coarse)').matches;
+  // The docked bar doesn't track the selection, and selectionchange fires
+  // continuously while the handles drag — keep the existing node instead of
+  // flickering through remove/recreate.
+  if (docked && popupEl && popupEl.classList.contains('is-docked')) return;
   removePopup();
   popupEl = document.createElement('div');
-  popupEl.className = 'ann-popup';
+  popupEl.className = 'ann-popup' + (docked ? ' is-docked' : '');
   popupEl.innerHTML =
     `<button type="button" data-pop="note"><span class="ann-ico">✎</span> Note</button>`
     + `<span class="ann-popup-sep"></span>`
     + `<button type="button" data-pop="hl">Highlight</button>`;
   document.body.appendChild(popupEl);
-  popupEl.style.left = (rect.left + rect.width / 2) + 'px';
-  popupEl.style.top = (rect.top - 8) + 'px';
-  const pr = popupEl.getBoundingClientRect();
-  if (pr.left < 6) popupEl.style.left = (6 + pr.width / 2) + 'px';
-  if (pr.right > window.innerWidth - 6) popupEl.style.left = (window.innerWidth - 6 - pr.width / 2) + 'px';
-  if (pr.top < 6) popupEl.style.top = (rect.bottom + 8 + pr.height) + 'px';
+  if (!docked) {
+    popupEl.style.left = (rect.left + rect.width / 2) + 'px';
+    popupEl.style.top = (rect.top - 8) + 'px';
+    const pr = popupEl.getBoundingClientRect();
+    if (pr.left < 6) popupEl.style.left = (6 + pr.width / 2) + 'px';
+    if (pr.right > window.innerWidth - 6) popupEl.style.left = (window.innerWidth - 6 - pr.width / 2) + 'px';
+    if (pr.top < 6) popupEl.style.top = (rect.bottom + 8 + pr.height) + 'px';
+  }
   popupEl.addEventListener('mousedown', e => e.preventDefault());
   popupEl.addEventListener('click', e => {
     const b = (e.target as HTMLElement).closest<HTMLElement>('[data-pop]');

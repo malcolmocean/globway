@@ -603,6 +603,13 @@ mark.hl.is-active { background: var(--hl-strong); border-bottom-color: var(--par
 .ann-popup button { font: 600 12.5px/1 inherit; padding: .5rem .8rem; border: 0; border-radius: 7px;
   background: transparent; color: #fff; cursor: pointer; display: inline-flex; align-items: center; gap: .35em; }
 .ann-popup button:hover { background: rgba(255,255,255,.15); }
+/* Touch: docked at the bottom of the viewport, clear of the OS selection
+   toolbar that floats beside the selection (annotations.ts adds .is-docked on
+   coarse pointers and skips the coordinate positioning). Bigger tap targets. */
+.ann-popup.is-docked { left: 50%; right: auto; top: auto;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%); box-shadow: 0 8px 24px rgba(0,0,0,.3); }
+.ann-popup.is-docked button { font-size: 14px; padding: .7rem 1.1rem; }
 /* leading glyphs in popup / mark-menu buttons read larger than the label text */
 .ann-ico { font-size: 1.35em; line-height: 1; }
 .ann-popup-sep { width: 1px; background: rgba(255,255,255,.25); margin: 4px 0; }
